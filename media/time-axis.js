@@ -6,7 +6,8 @@
   const hour = 3600000, weekdays = ['일', '월', '화', '수', '목', '금', '토'];
   const key = date => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
   const midnight = time => { const date = new Date(time); date.setHours(0, 0, 0, 0); return date; };
-  const nextDay = date => { const next = new Date(date); next.setDate(next.getDate() + 1); return next; };
+  // 자정이 없는 서머타임 전환일에도 다음 날짜의 시작을 00:00으로 다시 맞춘다.
+  const nextDay = date => { const next = new Date(date); next.setDate(next.getDate() + 1); next.setHours(0, 0, 0, 0); return next; };
   const label = (date, month = false, year = false) => `${year ? `${date.getFullYear()}년 ` : ''}${month ? `${date.getMonth() + 1}월 ` : ''}${date.getDate()}일(${weekdays[date.getDay()]})`;
 
   function layout(domain, width, measure = text => text.length * 8) {

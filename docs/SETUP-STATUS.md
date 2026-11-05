@@ -8,7 +8,7 @@
 - 공개 시각: 2026-11-05 18:09 KST
 - 첨부: usage-atlas-0.2.22.vsix 및 .sha256
 - VSIX SHA256: 9130eb76616cb2fbfbd0c4c0ca26a3ed63a17029ba9113504bd4ab2500874616
-- GitHub에서 내려받은 첨부 파일과 로컬 검수 파일의 해시가 동일하고 내부46개 파일 검증이 통과했습니다.
+- GitHub에서 내려받은 첨부 파일과 로컬 검수 파일의 해시가 동일하고 내부 46개 파일 검증이 통과했습니다.
 - 소스와 VSIX·SHA256을 공개했습니다. GitHub Release는 초안이 아닌 공개 상태입니다.
 - 소스에 개인 기록·로그·설정·인증 파일 및 생성 EXE를 포함하지 않습니다.
 
@@ -16,4 +16,4 @@
 
 워크플로 템플릿은 docs/workflows의 세 파일에 보관하며 .github/workflows에 등록하지 않습니다. 현재 배포 채널은 GitHub Releases의 수동 VSIX 배포입니다. Marketplace 등록·게시는 수행하지 않았습니다. 자동화나 Marketplace 활성화는 사용자가 이후 별도로 요청할 때 진행합니다.
 
-로컬 검수: Windows379 PASS/1 SKIP, WSL379 PASS/1 SKIP, 총380조건. Windows 공개 파일/구문/전체 단위/브라우저/실제 VS Code의15단계와 배포 파일 검증을 통과했습니다. 원격 CI 통과 결과로 대체하지 않습니다. 의존성 감사는0건입니다.
+로컬 검수: Windows 379 PASS/1 SKIP, WSL 379 PASS/1 SKIP, 총 380조건. Windows 공개 파일/구문/전체 단위/브라우저/실제 VS Code의 15단계와 배포 파일 검증을 통과했습니다. 원격 CI 통과 결과로 대체하지 않습니다. 의존성 감사는 0건입니다.

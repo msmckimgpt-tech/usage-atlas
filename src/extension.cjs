@@ -22,6 +22,18 @@ const {selection, createExclusion, validateExclusions} = require('./details-sele
 let stop;
 async function activate(context) {
   const cfg = () => vscode.workspace.getConfiguration('usageAtlas');
+// 적응형 수집의 유휴 간격까지 포함한 최대 예상 조회 간격(초). 연속성·기록 지연 판정의 기준이다.
+const maxIntervalSeconds = () => {
+  const base = intervalSeconds(cfg().get('intervalSeconds'));
+  return cfg().get('adaptiveCollection', true) ? Math.min(3600, base * Math.max(1, Math.min(20, Number(cfg().get('idleIntervalMultiplier', 4)) || 4))) : base;
+};
+// 예측 설정은 forecast.js와 같은 규칙으로 정규화해 확장·학습·패턴 보관이 같은 값을 쓰게 한다.
+const forecastConfig = (interval = maxIntervalSeconds()) => {
+  const raw = {fiveMinutes: cfg().get('forecastFiveLookbackMinutes', 60), weekHours: cfg().get('forecastWeekLookbackHours', 72), patternDays: cfg().get('forecastPatternDays', 21), timeZone: cfg().get('forecastPatternTimeZone', 'Asia/Seoul'), intervalSeconds: interval};
+  const normalized = forecasts.settings(raw);
+  return {...raw, fiveMinutes: normalized.fiveMinutes, weekHours: normalized.weekHours, patternDays: normalized.patternDays, timeZone: normalized.timeZone};
+};
+const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   const store = new Store(context.globalStorageUri.fsPath, cfg().get('retentionDays'));
   const metadataFile = path.join(store.dir, 'metadata.json');
   const output = vscode.window.createOutputChannel('Usage Atlas');
@@ -88,12 +100,12 @@ async function activate(context) {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10);
   let hoverCache;
   function updateStatus() {
-    const key = {records, metadata, projection: projected(), forecastEnabled: cfg().get('forecastEnabled', true), creditBasis: cfg().get('creditBasis', 'subscription'), colorMode: cfg().get('colorMode', 'system'), minute: Math.floor(Date.now() / 60000), theme: vscode.window.activeColorTheme.kind, interval: cfg().get('intervalSeconds'), enabled: cfg().get('enabled'), trusted: vscode.workspace.isTrusted, codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4)};
+    const key = {records, metadata, projection: projected(), forecastEnabled: cfg().get('forecastEnabled', true), creditBasis: cfg().get('creditBasis', 'subscription'), colorMode: cfg().get('colorMode', 'system'), minute: Math.floor(Date.now() / 60000), theme: vscode.window.activeColorTheme.kind, interval: maxIntervalSeconds(), enabled: cfg().get('enabled'), trusted: vscode.workspace.isTrusted, codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4)};
     if (hoverCache && Object.keys(key).every(k => key[k] === hoverCache[k])) return;
     const message = !key.enabled ? '수집 중지' : !key.trusted ? '작업 영역 신뢰 필요' : null;
     const collectors = message ? Object.fromEntries(['codex', 'claude'].map(id => [id, {message}])) : metadata.collectors;
     const dark = key.colorMode === 'dark' || key.colorMode !== 'light' && [vscode.ColorThemeKind.Dark, vscode.ColorThemeKind.HighContrast].includes(key.theme);
-    const p = preview(records, {projection: key.projection, creditBasis: key.creditBasis, forecastEnabled: key.forecastEnabled, dark, capacities: metadata.capacities, collectors, codexCreditDecimals: key.codexCreditDecimals, claudeUsdDecimals: key.claudeUsdDecimals, maxGap: Math.max(1800000, key.interval * 3000)});
+    const p = preview(records, {projection: key.projection, creditBasis: key.creditBasis, forecastEnabled: key.forecastEnabled, dark, capacities: metadata.capacities, collectors, codexCreditDecimals: key.codexCreditDecimals, claudeUsdDecimals: key.claudeUsdDecimals, maxGap: Math.max(1800000, key.interval * 3000), staleAfterMs: Math.max(900000, key.interval * 3000)});
     const md = new vscode.MarkdownString('', true);
     md.supportHtml = true;
     md.isTrusted = {enabledCommands: ['usageAtlas.settings']};
@@ -102,10 +114,12 @@ async function activate(context) {
     md.appendMarkdown(`![Usage Atlas · 최근 5시간](data:image/svg+xml;base64,${Buffer.from(title).toString('base64')}) [$(gear)](command:usageAtlas.settings "Usage Atlas 설정")\n\n`);
     md.appendMarkdown(`![Codex와 Claude Code 최근 5시간 사용률](data:image/svg+xml;base64,${Buffer.from(p.svg).toString('base64')})\n\n`);
     md.appendMarkdown('<table width="360"><thead><tr><th width="100" align="left"></th><th width="130" align="right">5시간</th><th width="130" align="right">주간</th></tr></thead><tbody>');
-    for (const s of p.summaries) md.appendMarkdown(`<tr><td>${s.name}</td>${['five', 'week'].map(w => `<td align="right">${s[w] === '-' ? '-' : `${s[w]} (${s.resets[w]})${key.forecastEnabled ? '<br/>' + (s.forecasts?.[w]?.label || '예상') + ' ' + (s.forecasts?.[w]?.text || '-') : ''}`}</td>`).join('')}</tr>`);
+    // 수집 중지·오류·기록 지연처럼 정상이 아닌 상태는 이름 아래에 함께 표시해 이전 값이 최신처럼 보이지 않게 한다.
+    const escapeHtml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    for (const s of p.summaries) md.appendMarkdown(`<tr><td>${s.name}${s.status && s.status !== '정상' ? '<br/><small>' + escapeHtml(s.status) + '</small>' : ''}</td>${['five', 'week'].map(w => `<td align="right">${s[w] === '-' ? '-' : `${s[w]} (${s.resets[w]})${key.forecastEnabled ? '<br/>' + (s.forecasts?.[w]?.label || '예상') + ' ' + (s.forecasts?.[w]?.text || '-') : ''}`}</td>`).join('')}</tr>`);
     md.appendMarkdown('</tbody></table>\n\n');
     status.tooltip = md;
-    status.accessibilityInformation = {label: `Usage Atlas. 최근 5시간 사용량. ${p.summaries.map(s => `${s.name} 5시간 ${s.five}, 주간 ${s.week}`).join('. ')}. 클릭하여 상세 차트 열기`};
+    status.accessibilityInformation = {label: `Usage Atlas. 최근 5시간 사용량. ${p.summaries.map(s => `${s.name}${s.status && s.status !== '정상' ? ' (' + s.status + ')' : ''} 5시간 ${s.five}, 주간 ${s.week}`).join('. ')}. 클릭하여 상세 차트 열기`};
     hoverCache = key;
   }
   async function executable() {
@@ -119,9 +133,9 @@ async function activate(context) {
     return process.platform === 'win32' ? 'codex.exe' : 'codex';
   }
   function projected() {
-    const interval = intervalSeconds(cfg().get('intervalSeconds')), gap = Math.max(1800000, interval * 3000);
+    const interval = maxIntervalSeconds(), gap = Math.max(1800000, interval * 3000);
     const enabled = cfg().get('forecastEnabled', true);
-    const forecastOptions = {fiveMinutes: cfg().get('forecastFiveLookbackMinutes', 60), weekHours: cfg().get('forecastWeekLookbackHours', 72), patternDays: cfg().get('forecastPatternDays', 21), timeZone: cfg().get('forecastPatternTimeZone', 'Asia/Seoul'), intervalSeconds: interval};
+    const forecastOptions = forecastConfig(interval);
     const forecastKey = JSON.stringify([enabled, forecasts.settings(forecastOptions)]);
     const billingKey = billing.catalog.version;
     patternBook.configure(metadata.capacities, cfg().get('retentionDays'), metadata.forecastPatternEpoch);
@@ -155,7 +169,7 @@ async function activate(context) {
       data[id] = {...p, status: metadata.collectors[id]};
 
     }
-    return {type: 'data', now, firstObserved, data, creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: records.length};
+    return {type: 'data', now, firstObserved, data, creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: records.length};
   }
   async function sendView() {
     if (!panel?.visible || !uiReady || sentRevision === revision && !resetPending) return;
@@ -228,7 +242,7 @@ async function activate(context) {
         metadata.analysisOwnerPid = process.pid;
         metadata.analysisActivity = Object.fromEntries(['codex', 'claude'].map(id => [id, {active: analysisData.activity?.[id]?.active === true, lastActivity: Number.isFinite(analysisData.activity?.[id]?.lastActivity) ? analysisData.activity[id].lastActivity : null, complete: analysisData.coverage?.[id]?.partial !== true && analysisData.coverage?.[id]?.cacheWriteFailed !== true}]));
         await saveMeta();
-        if (cfg().get('forecastEnabled', true) && cfg().get('forecastPatternDays', 21) > 0) {projected(); await patternBook.save().catch(() => {});}
+        if (cfg().get('forecastEnabled', true) && forecastConfig().patternDays > 0) {projected(); await patternBook.save().catch(() => {});}
         await diagnostics.save().catch(() => {});
         return changed;
       });
@@ -238,7 +252,7 @@ async function activate(context) {
   }
   async function maintainForecast() {
     if (forecastRunning) return forecastRunning;
-    if (disposed || !vscode.workspace.isTrusted || !cfg().get('enabled') || !cfg().get('forecastEnabled', true) || !cfg().get('forecastPatternDays', 21)) return;
+    if (disposed || !vscode.workspace.isTrusted || !cfg().get('enabled') || !cfg().get('forecastEnabled', true) || !forecastConfig().patternDays) return;
     forecastRunning = (async () => {
       await refreshStored(); projected(); const input = forecastInput;
       if (!input || !Object.values(input.providers).some(provider => Object.values(provider.windows).some(window => window.data.byteLength > 0))) return;

@@ -11,6 +11,7 @@ const timestamp = value => finite(value) ? value : typeof value === 'string' && 
 const body = content => typeof content === 'string' ? content : Array.isArray(content) ? content.map(block =>
   ['text', 'input_text', 'output_text'].includes(block?.type) && typeof block.text === 'string' ? block.text : block?.type === 'image' || block?.type === 'input_image' ? '[이미지]' : ''
 ).filter(Boolean).join('\n') : '';
+const injectedContext = /^\s*(<environment_context>|<user_instructions>|<permissions instructions>|# AGENTS\.md instructions)/;
 function messages(event, provider) {
   const time = timestamp(event?.timestamp ?? event?.time), rows = [];
   if (time === null) return rows;
@@ -21,7 +22,10 @@ function messages(event, provider) {
   if (provider === 'claude') {
     if (['user', 'assistant'].includes(event.type) && !event.isMeta) add(event.message?.role || event.type, body(event.message?.content), event.message?.id || event.uuid);
   } else if (event.type === 'response_item' && event.payload?.type === 'message') {
-    add(event.payload.role, body(event.payload.content), event.payload.id);
+    const text = body(event.payload.content);
+    // Codex가 사용자 역할로 주입하는 환경·지침 문맥은 사용자가 쓴 메시지가 아니다.
+    if (event.payload.role === 'user' && injectedContext.test(text)) return rows;
+    add(event.payload.role, text, event.payload.id);
   } else if (event.type === 'event_msg' && ['user_message', 'agent_message'].includes(event.payload?.type)) {
     add(event.payload.type === 'user_message' ? 'user' : 'assistant', body(event.payload.message), event.payload.id, true);
   } else {

@@ -170,11 +170,19 @@
       return name ? projectNameCounts.get(name) > 1 ? `${name} · ${shortProjectId(id)}` : name : shortProjectId(id);
     };
     const isOpen = () => dialog.open;
+    // 금액 표시 자릿수 설정(Claude USD·Codex 크레딧)을 모달에도 적용한다. 원본 값은 그대로 둔다.
+    const amountPlaces = label => {
+      const model = getModel() || {};
+      if (/USD/.test(label || '') && selection?.provider === 'claude') return model.claudeUsdDecimals;
+      if (label === '크레딧 차감 추정' && selection?.provider === 'codex') return model.codexCreditDecimals;
+      return undefined;
+    };
+    const amountText = (label, value) => {const places = amountPlaces(label); return places !== undefined && finite(value) && globalThis.usageAtlasAmountFormat ? globalThis.usageAtlasAmountFormat.format(value, places) : text(value);};
     const focusables = () => [...dialog.querySelectorAll('button, select, input, textarea, a[href], [tabindex="0"]')].filter(value => !value.disabled && !value.hidden && value.getClientRects().length);
     const section = (parent, title) => {const block = node('section'); block.append(node('h3', title)); parent.append(block); return block;};
     const metrics = (parent, data, keys) => {
       const list = node('dl', null, 'ua-details-metrics');
-      for (const key of keys) {list.append(node('dt', labels[key] || key), node('dd', /ratio/i.test(key) && finite(data?.[key]) ? text(data[key] * 100) + '%' : text(data?.[key])));}
+      for (const key of keys) {list.append(node('dt', labels[key] || key), node('dd', /ratio/i.test(key) && finite(data?.[key]) ? text(data[key] * 100) + '%' : amountText(labels[key], data?.[key])));}
       parent.append(list);
     };
     const notes = (parent, values) => {
@@ -205,8 +213,8 @@
           const tr = node('tr');
           for (const [label, read, format] of columns) {
             const td = node('td'), value = read(item);
-            if (drill && label === columns[0][0] && value != null) {const button = node('button', text(value)); button.type = 'button'; button.id = 'ua-drill-' + encodeURIComponent(title + '/' + String(value).slice(0, 200)); button.addEventListener('click', () => drill(item)); td.append(button);}
-            else {const formatted = format ? format(value) : display({'모드': 'mode', '추론 수준': 'effort', '모델': 'model'}[label], value); if (formatted instanceof Node) td.append(formatted); else td.textContent = formatted;}
+            if (drill && label === columns[0][0] && value != null && drill.enabled?.(item) !== false) {const button = node('button', text(value)); button.type = 'button'; button.id = 'ua-drill-' + encodeURIComponent(title + '/' + String(value).slice(0, 200)); button.addEventListener('click', () => drill(item)); td.append(button);}
+            else {const formatted = format ? format(value) : amountPlaces(label) !== undefined ? amountText(label, value) : display({'모드': 'mode', '추론 수준': 'effort', '모델': 'model'}[label], value); if (formatted instanceof Node) td.append(formatted); else td.textContent = formatted;}
             tr.append(td);
           }
           body.append(tr);
@@ -217,7 +225,7 @@
         button.id = 'ua-sort-' + encodeURIComponent(title) + '-' + index;
         if (label === '대화') {th.textContent = label; row.append(th); continue;}
         if (read === sortKey) th.setAttribute('aria-sort', 'descending');
-        button.addEventListener('click', () => {ascending = format === date ? false : sortKey === read ? !ascending : true; sortKey = read; sortTime = format === date; for (const cell of row.children) cell.removeAttribute('aria-sort'); th.setAttribute('aria-sort', ascending ? 'ascending' : 'descending'); draw();});
+        button.addEventListener('click', () => {ascending = sortKey === read ? !ascending : format !== date; sortKey = read; sortTime = format === date; for (const cell of row.children) cell.removeAttribute('aria-sort'); th.setAttribute('aria-sort', ascending ? 'ascending' : 'descending'); draw();});
         th.append(button); row.append(th);
       }
       header.append(row); grid.append(header, body); wrap.append(grid); block.append(wrap); draw();
@@ -307,7 +315,7 @@
     };
     const subset = source => ({...source, items: items(source).filter(row => filterKeys.every(key => {
       const value = filters[key]; if (!value) return true;
-      if (key === 'session') return row.sessionId === value || row.id === value;
+      if (key === 'session') return row.sessionId == null && !('sessionId' in row) || row.sessionId === value || row.id === value;
       const plural = {model: 'models', effort: 'efforts', mode: 'modes'}[key];
       return row[key] == null && !row[plural] || row[key] === value || Array.isArray(row[plural]) && row[plural].includes(value);
     }))});
@@ -396,7 +404,7 @@
       , ['적용 중', row => row.active]
       ], item => {
         if (item.active === false) return;
-        const box = node('div', null, 'ua-details-restore'); box.append(node('p', `${date(item.start)} – ${date(item.end)} · ${text(item.reason)} · 제외를 복원할까요?`));
+        block.querySelector('.ua-details-restore')?.remove(); const box = node('div', null, 'ua-details-restore'); box.append(node('p', `${date(item.start)} – ${date(item.end)} · ${text(item.reason)} · 제외를 복원할까요?`));
         const button = node('button', '제외 복원'); button.type = 'button'; button.dataset.analysisAction = ''; button.addEventListener('click', () => request('analysisRestore', {exclusionId: item.exclusionId || item.id})); box.append(button); block.append(box); button.focus();
       });
       notes(parent, report.exclusions?.notes);
@@ -419,7 +427,7 @@
       , ['상위 세션', row => row.parentSessionId]
       ];
       table(usage, '세션 → 요청 → 호출', subset(report.sessions), [...aggregate, conversationColumn], row => setFilter('session', row.sessionId || row.id));
-      table(usage, '요청', subset(report.requests), [['요청', row => row.turnId || row.id], ...aggregate.slice(0, 6), conversationColumn], row => setFilter('turnId', row.turnId || row.id));
+      table(usage, '요청', subset(report.requests), [['요청', row => row.turnId ?? row.requestId ?? null], ...aggregate.slice(0, 6), conversationColumn], Object.assign(row => setFilter('turnId', row.turnId), {enabled: row => row.turnId != null}));
       table(usage, '호출', subset(report.calls), [
         ['모델', row => row.model]
       , conversationColumn
@@ -582,7 +590,12 @@
       }
       if (!isOpen() || !latest || message?.requestId !== latest || !['details', 'detailsError'].includes(message.type)) return;
       dialog.removeAttribute('aria-busy'); latest = '';
-      if (message.type === 'detailsError' || !message.data || typeof message.data !== 'object') {preview = null; el('details-status').textContent = '분석을 불러오지 못했습니다. 다시 시도하세요.'; el('details-retry').hidden = false; return;}
+      if (message.type === 'detailsError' || !message.data || typeof message.data !== 'object') {
+        preview = null; dialog.querySelectorAll('[data-analysis-action]').forEach(button => {button.disabled = button.id === 'ua-exclude-commit';});
+        // 사용자 안내용(한글) 검증 메시지는 그대로 보여 주고, 내부 오류는 일반 문구로 대신한다.
+        const reason = typeof message.error === 'string' && /[가-힣]/.test(message.error) ? message.error : '';
+        el('details-status').textContent = reason || '분석을 불러오지 못했습니다. 다시 시도하세요.'; el('details-retry').hidden = false; return;
+      }
       report = message.data;
       if (preview) preview.validated = !!report.exclusionPreview && report.exclusionPreview.start === preview.start && report.exclusionPreview.end === preview.end && report.exclusionPreview.reason === preview.reason;
       const activeElement = document.activeElement, activeId = activeElement?.id;

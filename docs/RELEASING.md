@@ -20,21 +20,21 @@ git push origin v0.2.22
 
 ## Marketplace 준비
 
-현재 package.json의 publisher는 기존 로컬 설치ID를 유지하기 위한 local-tools입니다. 이 이름에 대한 Marketplace 소유권을 확인한 상태는 아닙니다. GitHub 계정과 Marketplace 게시자 등록은 별개입니다. 소유하지 않은 게시자로 게시하지 않습니다.
+현재 package.json의 publisher는 기존 로컬 설치 ID를 유지하기 위한 local-tools입니다. 이 이름에 대한 Marketplace 소유권을 확인한 상태는 아닙니다. GitHub 계정과 Marketplace 게시자 등록은 별개입니다. 소유하지 않은 게시자로 게시하지 않습니다.
 
 게시할 때 다음을 한 번 설정해야 합니다.
 
 1. [Marketplace 게시자 관리](https://marketplace.visualstudio.com/manage/publishers/)에서 사용할 게시자를 등록하거나 소유권을 확인합니다.
-2. 다른 publisher를 사용한다면 package.json의 publisher를 바꾸고 새 버전으로 GitHub Release를 만듭니다. 기존 local-tools.usage-atlas와 확장ID·저장 공간이 달라지므로 기존 사용자의 기록 이전 안내를 먼저 준비합니다.
+2. 다른 publisher를 사용한다면 package.json의 publisher를 바꾸고 새 버전으로 GitHub Release를 만듭니다. 기존 local-tools.usage-atlas와 확장 ID·저장 공간이 달라지므로 기존 사용자의 기록 이전 안내를 먼저 준비합니다.
 3. Marketplace 게시자의 Trusted Publishing 정책을 다음과 같이 구성합니다: owner=msmckimgpt-tech, repository=usage-atlas, workflow=marketplace.yml, environment=marketplace.
 4. GitHub 저장소의 marketplace Environment를 생성하고 필요하면 승인 담당자를 지정합니다.
-5. 저장소 Actions 변수 MARKETPLACE_PUBLISHER를 소유한 게시자ID, MARKETPLACE_ENABLED를 true로 설정합니다.
+5. 저장소 Actions 변수 MARKETPLACE_PUBLISHER를 소유한 게시자 ID, MARKETPLACE_ENABLED를 true로 설정합니다.
 6. Publish Marketplace 워크플로를 수동 실행하고 검수된 릴리스 태그를 입력합니다. 현재 main과 같은 버전/게시자의 GitHub Release만 게시합니다.
 
-이 흐름은 GitHub OIDC와 vsce --oidc를 사용하며 장기 PAT를 저장하지 않습니다. 기본 상태에서 Marketplace 작업은 비활성화됩니다. 입력 태그·게시자ID·다운로드 파일의 SHA256·내부 manifest를 확인하고 GitHub 릴리스와 동일한 VSIX를 게시합니다.
+이 흐름은 GitHub OIDC와 vsce --oidc를 사용하며 장기 PAT를 저장하지 않습니다. 기본 상태에서 Marketplace 작업은 비활성화됩니다. 입력 태그·게시자 ID·다운로드 파일의 SHA256·내부 manifest를 확인하고 GitHub 릴리스와 동일한 VSIX를 게시합니다.
 
 공식 근거(2026-11-05 확인): [VS Code 게시 안내](https://code.visualstudio.com/api/working-with-extensions/publishing-extension), [VS Code CI](https://code.visualstudio.com/api/working-with-extensions/continuous-integration), [GitHub 워크플로 권한](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions).
 
 ## 라이선스
 
-LICENSE, THIRD-PARTY-NOTICES.md, licenses/Codexon-LICENSE.txt, media/D3-LICENSE, media/D3-NOTICES 및 원저자UI 고지는 모든 소스/바이너리 배포에 유지합니다. 단일 MIT 라이선스만으로 프로젝트 전체의 조건을 대체하지 않습니다.
+LICENSE, THIRD-PARTY-NOTICES.md, licenses/Codexon-LICENSE.txt, media/D3-LICENSE, media/D3-NOTICES 및 원저자 UI 고지는 모든 소스/바이너리 배포에 유지합니다. 단일 MIT 라이선스만으로 프로젝트 전체의 조건을 대체하지 않습니다.

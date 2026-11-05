@@ -29,7 +29,7 @@ function resetRemaining(reset, now) {
   if (reset - now >= 86400000) {const hours = Math.floor((reset - now) / 3600000); return `${Math.floor(hours / 24)}d ${hours % 24}h`;}
   return `${Math.floor(Math.min(1439, minutes) / 60)}h ${Math.min(1439, minutes) % 60}m`;
 }
-function preview(records, {now = Date.now(), dark = false, capacities = [], collectors = {}, maxGap = 1800000, codexCreditDecimals = 4, claudeUsdDecimals = 4, projection, conversion = null, forecastEnabled = true, creditBasis = 'subscription'} = {}) {
+function preview(records, {now = Date.now(), dark = false, capacities = [], collectors = {}, maxGap = 1800000, staleAfterMs = 900000, codexCreditDecimals = 4, claudeUsdDecimals = 4, projection, conversion = null, forecastEnabled = true, creditBasis = 'subscription'} = {}) {
   const start = now - duration, width = 360, height = 192, right = width - 10, top = 28;
   // SVG 이미지 생성은 DOM 없이 수행하므로 11px 글자 폭을 보수적으로 계산한다.
   const measure = text => [...text].reduce((sum, char) => sum + (char.charCodeAt(0) > 127 ? 11 : char === ' ' ? 3.5 : 7), 0);
@@ -67,7 +67,7 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
   for (const id of providers) {
     const provider = projected[id], last = provider?.last?.time <= now ? provider.last : history.findLast(r => r.provider === id);
     const summary = {name: names[id], five: '-', week: '-', resets: {five: '-', week: '-'}, status: collectors[id]?.message || '수집 대기', observed: last ? date.format(last.time) : '-'};
-    if (last && now - last.time > 900000) summary.status += ' · 기록 지연';
+    if (last && now - last.time > staleAfterMs) summary.status += ' · 기록 지연';
     for (const w of ['five', 'week']) {
       const value = last?.windows[w]?.used;
       if (typeof value === 'number' && Number.isFinite(value)) summary[w] = percent(value);

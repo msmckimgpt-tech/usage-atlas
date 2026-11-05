@@ -173,7 +173,9 @@ function converter(model) {
           if (finite(delta)) total += delta; else totalKnown = false;
           if (finite(nativeDelta)) nativeTotal += nativeDelta; else nativeTotalKnown = false;
         }
-        if (credit.cycleStart) {usage = 0; usageKnown = true; nativeUsage = 0; nativeUsageKnown = true;}
+        // 5시간 창은 주간 경계뿐 아니라 자기 창의 초기화에서도 추가 크레딧 사용량을 새로 센다.
+        const cycleStart = credit.cycleStart || window === 'five' && (point.event?.kind === 'scheduled-reset' || point.event?.kind === 'early-reset');
+        if (cycleStart) {usage = 0; usageKnown = true; nativeUsage = 0; nativeUsageKnown = true;}
         else if (positive(raw)) {
           if (finite(delta)) usage += delta; else usageKnown = false;
           if (finite(nativeDelta)) nativeUsage += nativeDelta; else nativeUsageKnown = false;
@@ -216,7 +218,9 @@ function callConverter(model, records, capacities, window) {
     const capacityKey = JSON.stringify([row.provider, row.account, after.plan, window]);
     let candidates = capacityCache.get(capacityKey);
     if (!candidates) {candidates = capacities.filter(c => c.provider === row.provider && c.account === row.account && c.window === window && c.plan === after.plan).sort((a, b) => a.time - b.time); capacityCache.set(capacityKey, candidates);}
-    const mult = candidates.findLast(c => c.time <= after.time)?.mult ?? candidates[0]?.mult ?? null;
+    // 같은 시각의 배율이 여럿이면 시계열(core.cjs)처럼 먼저 저장된 값을 사용한다.
+    const effective = candidates.filter(c => c.time <= after.time), latestTime = effective.at(-1)?.time;
+    const mult = (effective.find(c => c.time === latestTime) ?? candidates[0])?.mult ?? null;
     const cohort = cohorts.get(cohortKey(row.provider, row.account, after.plan, mult, window));
     const units = row.provider === 'codex' ? row.subscriptionCredits : row.costUsd;
     if (!cohort || !finite(units)) return result;

@@ -96,7 +96,7 @@
     for (const id of ids) {
       const p = model.data[id], last = p?.last;
       const message = p?.status?.message || '수집 대기';
-      const stale = Boolean(last && model.now - last.time > 900000);
+      const stale = Boolean(last && model.now - last.time > (number(model.staleAfterMs) ? model.staleAfterMs : 900000));
       const status = `${last?.plan || '요금제 미확인'} · ${message}${stale ? ' · 기록 지연' : ''}${last ? ' · ' + new Date(last.time).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', hour12: false}) : ''}`;
       const detail = `${status} · 최근 관측 ${last ? fmt(last.time) : '없음'}${p?.status?.next ? ' · 다음 조회 ' + fmt(p.status.next) : ''}`;
       const descriptions = [];
@@ -113,7 +113,7 @@
       const summary = !creditAvailable(id) || !number(total) ? '-' : unit === 'credits' ? `관측 감소 ${creditNumber(total, id)} 크레딧${number(last?.creditBalance) ? ' · 잔액 ' + creditNumber(last.creditBalance, id) : ''}` : `관측 지출 $${creditNumber(total, id)}`;
       const pending = state.credit && !canEstimate(id);
       const conversion = state.creditBasis === 'billing' ? (pending ? '금액 기준 · 가격 미확인' : '공식 월 기본 구독료 대비 지출 비율') : pending ? `자동 환산 대기 · ${!creditAvailable(id) ? '원단위 기록 없음' : state.mode === 'usage' && !number(total) ? '주간 기준 미확인' : '관측 근거 부족'} · 합산 대기` : state.creditMode === 'estimate' ? '사용률에 추정 합산' : '크레딧·금액 ' + ({usage: '주간 사용', delta: '변화량', total: '전체 누적'}[state.mode]);
-      el(id).dataset.creditState = !state.credit ? 'off' : pending ? 'pending' : state.creditMode === 'estimate' ? 'estimated' : 'native';
+      el(id).dataset.creditState = !state.credit ? 'off' : pending ? 'pending' : displayCreditMode() === 'estimate' ? 'estimated' : 'native';
       el(id + '-credit').textContent = !state.credit ? '' : pending ? (state.creditMode === 'money' ? summary + ' · 환산 대기' : conversion) : state.creditMode === 'estimate' ? '추정 합산 · ' + summary : summary;
       if (state.credit && state.creditBasis === 'billing') {const value = p?.ledger?.at(-1)?.billing?.[state.mode]; el(id + '-credit').textContent = (number(value) ? '금액 ' + feeNumber(value) + '% · ' : '금액 - · ') + summary;}
       el(id + '-credit').title = conversion + ' · ' + summary + (state.creditBasis === 'billing' ? ' · 기본 월 요금 ' + (number(p?.ledger?.at(-1)?.billing?.monthlyUsd) ? '$' + p.ledger.at(-1).billing.monthlyUsd : '-') + ' · 공식 가격 확인 ' + (p?.ledger?.at(-1)?.billing?.priceVerifiedAt || '-') + ' · 실제 청구액 아님' : '') + (unit === 'credits' ? ' · 잔액 감소 관측값이며 충전·만료·조정을 구분하는 결제 내역은 아닙니다.' : '');
@@ -137,7 +137,7 @@
     root.dataset.creditMode = state.credit ? displayCreditMode() : 'off';
     el('refs').disabled = state.basis !== 'base' || state.mode === 'delta';
     state.theme = model.colorMode || 'system';
-    root.style.setProperty('--ua-tooltip-opacity', (100 - (model.tooltipTransparency ?? 14)) + '%');
+    root.style.setProperty('--ua-tooltip-opacity', (100 - (number(model.tooltipTransparency) ? Math.max(0, Math.min(100, model.tooltipTransparency)) : 14)) + '%');
     for (const [key, fallback, automatic] of [
         ['pageWidth', 1440, '100%']
       , ['pageHeight', 0, '100%']
@@ -178,8 +178,16 @@
     const nativeCredits = visible.filter(id => state.credit && creditAvailable(id) && displayCreditMode() === 'money' && model.data[id]?.ledger.some(p => number(p.credit?.[state.mode])));
     const nativeData = nativeCredits.flatMap(id => creditGraphs.series(model.data[id], id, state)).map(s => ({...s, bridges: gaps.bridges(s.points, 'y')}));
     const forecastTrends = model.forecastEnabled === false ? [] : visible.flatMap(id => ['five', 'week'].map(w => {
-      const provider = model.data[id], curve = forecasts.curve(provider?.forecast?.[w], provider?.windows?.[w]?.at(-1), state, model.now);
-      return curve ? {id, w, ...curve} : null;
+      const provider = model.data[id], last = provider?.windows?.[w]?.at(-1), curve = forecasts.curve(provider?.forecast?.[w], last, state, model.now);
+      if (!curve) return null;
+      // 추정 합산 보기에서는 관측선과 같은 기준(구독 + 추가 크레딧 환산)에서 예상선을 잇는다.
+      if (state.credit && displayCreditMode() === 'estimate') {
+        const observed = quota(id, w).flatMap(s => s.points).find(p => p.time === last.time && number(p.y));
+        if (!observed) return null;
+        const offset = observed.y - curve.points[0].y;
+        if (offset) {curve.points = curve.points.map(p => ({...p, y: p.y + offset})); curve.range = curve.range.map(p => ({...p, low: p.low + offset, high: p.high + offset}));}
+      }
+      return {id, w, ...curve};
     })).filter(s => s && s.points.at(-1).time >= domain[0] && s.points[0].time <= domain[1]);
     const rangeExtents = forecastTrends.flatMap(s => ['low','high'].map(field => ({...s, points: (s.range || []).map((p,i)=>({time:p.time,y:p[field],continuous:i>0}))})));
     const plotted = [...data, ...nativeData.filter(s => !s.billing), ...forecastTrends, ...rangeExtents];
@@ -211,16 +219,17 @@
     const marker = (g, id, px, py, size = 40) => g.append('path').attr('d', d3.symbol().type(id === 'codex' ? d3.symbolCircle : d3.symbolDiamond).size(size)()).attr('transform', `translate(${px},${py})`).attr('fill', colors[id]).attr('stroke', 'var(--ua-bg)').attr('vector-effect', 'non-scaling-stroke');
     const estimated = [...data, ...nativeData].some(s => s.points.some(p => p.estimated)) || forecastTrends.length > 0;
     const pendingEstimate = state.credit && state.creditBasis !== 'billing' && visible.some(id => !canEstimate(id));
+    const rawAxis = state.mode === 'total' ? '미환산 pp' : state.mode === 'delta' ? '원본 pp' : '원본 %';
     text((state.mode === 'delta' ? '변화량 pp' : state.mode === 'total' ? rawTotal && !split ? '관측 누적 pp' : '관측 누적 %' : split ? '기본 용량 %' : '사용률 %') + (estimated ? pendingEstimate ? ' (일부 추정)' : ' (추정)' : pendingEstimate ? ' · 환산 대기' : ''), left, top - 14, 'ua-axis');
     const insideAxis = (value, px, py) => text(value, px, py, 'ua-inside-axis').attr('text-anchor', 'end').attr('data-inside-axis', '');
-    if (split) {insideAxis(state.mode === 'total' ? '미환산 pp' : '원본 %', right - 5, top - 14).append('title').text(state.mode === 'total' ? '배율 이력이 없는 관측 증가분은 원본 퍼센트포인트로 유지' : '배율 미확인: 해당 요금제 한도 기준'); for (const n of uy.ticks(3)) insideAxis(round(n), right - 5, uy(n) + 4);}
+    if (split) {insideAxis(rawAxis, right - 5, top - 14).append('title').text(state.mode === 'total' ? '배율 이력이 없는 관측 증가분은 원본 퍼센트포인트로 유지' : '배율 미확인: 해당 요금제 한도 기준'); for (const n of uy.ticks(3)) insideAxis(round(n), right - 5, uy(n) + 4);}
     if (state.credit && state.creditBasis === 'billing') {
-      const offset = split ? Math.max(measureAxis(state.mode === 'total' ? '미환산 pp' : '원본 %'), ...uy.ticks(3).map(value => measureAxis(String(round(value))))) + 16 : 0;
+      const offset = split ? Math.max(measureAxis(rawAxis), ...uy.ticks(3).map(value => measureAxis(String(round(value))))) + 16 : 0;
       const axisX = right - 5 - offset;
       insideAxis('금액 %', axisX, top - 14).attr('data-billing-axis', '').append('title').text('공식 월 기본 요금 대비 비율. 100%는 구독 한도 소진이 아닙니다.');
       for (const value of by.ticks(3)) insideAxis(feeNumber(value) + '%', axisX, by(value) + 4).attr('data-billing-tick', '');
     }
-    const creditLegendRight = right - 5 - (state.creditBasis === 'billing' && state.credit ? 120 : 0) - (split ? Math.max(48, measureAxis(state.mode === 'total' ? '미환산 pp' : '원본 %')) + 10 : 0);
+    const creditLegendRight = right - 5 - (state.creditBasis === 'billing' && state.credit ? 120 : 0) - (split ? Math.max(48, measureAxis(rawAxis)) + 10 : 0);
     let creditAxisRight = state.creditBasis === 'billing' ? left : creditLegendRight, creditLegendRow = 0;
     for (const unit of units) {
       const [lo, hi] = creditRanges[unit], name = unit === 'credits' ? '크레딧' : 'USD';
@@ -234,7 +243,8 @@
       legend.append('title').text(state.creditBasis === 'billing' ? '표시 구간 원단위 범위. 선 높이는 공식 월 구독료 대비 지출 비율입니다.' : '표시 구간 원단위 범위. 선 높이는 5시간·주간 구독 환산 사용률입니다.');
       if (state.creditBasis === 'billing') creditLegendRow++; else creditAxisRight -= legendWidth + 14;
     }
-    const ticks = state.basis === 'base' && state.mode !== 'delta' ? [0, ...refs] : y.ticks(4);
+    // 기본 용량 기준선 외에도 일반 눈금을 더해 기준선보다 큰 값의 축을 읽을 수 있게 한다.
+    const ticks = state.basis === 'base' && state.mode !== 'delta' ? [...new Set([0, ...refs, ...y.ticks(4).filter(n => refs.every(r => Math.abs(y(n) - y(r)) >= 14))])].sort((a, b) => a - b) : y.ticks(4);
     for (const n of ticks) {svg.append('line').attr('x1', left).attr('x2', right).attr('y1', y(n)).attr('y2', y(n)).attr('stroke', refs.includes(n) ? 'var(--ua-border)' : 'var(--ua-grid)'); text(round(n), left - 7, y(n) + 4).attr('text-anchor', 'end');}
     const frame = svg.append('rect').attr('data-chart-frame', '').attr('x', left).attr('y', top).attr('width', right - left).attr('height', bottom - top).attr('fill', 'none').attr('stroke', 'var(--ua-border)');
     svg.append('defs').append('clipPath').attr('id', 'ua-clip').append('rect').attr('x', left).attr('y', top).attr('width', right - left).attr('height', bottom - top);
@@ -327,7 +337,7 @@
       g.append('line').attr('data-forecast', p.id + '-' + p.w).attr('data-time', p.eta).attr('x1', x(p.eta)).attr('x2', x(p.eta)).attr('y1', top).attr('y2', bottom).attr('stroke', colors[p.id]).attr('stroke-width', .8).attr('stroke-dasharray', '1 6').attr('opacity', .7);
       marker(g, p.id, x(p.eta), predictionY(p), 28).datum(p).attr('data-forecast-marker', p.id + '-' + p.w).attr('fill', 'var(--ua-bg)').attr('stroke', colors[p.id]).attr('stroke-width', 1).attr('tabindex', 0).attr('role', 'img').attr('aria-label', title).append('title').text(title);
     }
-    if (model.now >= domain[0] && model.now <= domain[1]) {g.append('line').attr('data-now', '').attr('x1', x(model.now)).attr('x2', x(model.now)).attr('y1', top).attr('y2', bottom).attr('stroke', 'var(--ua-focus)').attr('stroke-dasharray', '2 4'); text('현재', Math.max(left + 14, Math.min(right - 14, x(model.now))), state.credit && state.creditBasis === 'billing' && narrow ? Math.min(bottom - 8, top + 76) : units.length || state.credit && state.creditMode === 'estimate' ? top + 14 : top - 14, 'ua-inside-axis').attr('text-anchor', 'middle').attr('fill', 'var(--ua-focus)');}
+    if (model.now >= domain[0] && model.now <= domain[1]) {g.append('line').attr('data-now', '').attr('x1', x(model.now)).attr('x2', x(model.now)).attr('y1', top).attr('y2', bottom).attr('stroke', 'var(--ua-focus)').attr('stroke-dasharray', '2 4'); text('현재', Math.max(left + 14, Math.min(right - 14, x(model.now))), state.credit && state.creditBasis === 'billing' && narrow ? Math.min(bottom - 8, top + 76) : units.length || state.credit && displayCreditMode() === 'estimate' ? top + 14 : top - 14, 'ua-inside-axis').attr('text-anchor', 'middle').attr('fill', 'var(--ua-focus)');}
     for (const [kind, ticks, length] of [['day', axis.dayTicks, 8], ['hour', axis.hourTicks, 4]]) {
       svg.append('path').attr(`data-${kind}-ticks`, ticks.length).attr('d', ticks.map(px => `M${left + px},${bottom}v${length}`).join('')).attr('stroke', 'var(--ua-muted)').attr('stroke-width', kind === 'day' ? 1 : .6).attr('opacity', kind === 'day' ? .8 : .5).attr('fill', 'none');
     }
@@ -382,7 +392,7 @@
       if (!points) return;
       lineTargets.add(key);
       const time = Math.max(domain[0], Math.min(model.now, domain[1], points.at(-1).time));
-      d3.select(this).attr('data-details-line', key).attr('tabindex', 0).attr('role', 'button').attr('aria-haspopup', 'dialog').attr('aria-label', `${names[trace.id]} ${trace.w === 'credit' ? labels[trace.creditWindow] + ' 환산 크레딧' : labels[trace.w]} 선 상세 분석. Enter 또는 Space로 열기`).on('keydown.details', function(event) {
+      d3.select(this).attr('data-details-line', key).attr('tabindex', 0).attr('role', 'button').attr('aria-haspopup', 'dialog').attr('aria-label', `${names[trace.id]} ${trace.w === 'credit' ? trace.billing ? '금액' : labels[trace.creditWindow] + ' 환산 ' + (creditUnit(trace.id) === 'credits' ? '크레딧' : 'USD') : labels[trace.w]} 선 상세 분석. Enter 또는 Space로 열기`).on('keydown.details', function(event) {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault(); event.stopPropagation(); openDetails(trace, time, this);
       });
@@ -406,7 +416,7 @@
         const e = event || p?.event, rows = [], notes = [], credit = s.w === 'credit';
         const transition = e ? `${round(e.before)}% → ${round(e.after)}%` : '';
         const merged = e && (!p || state.mode === 'usage' && !p.estimated && p.y === p.value && [e.before, e.after].includes(p.value));
-        let header = `${periodText(s)} / ${merged ? transition : s.billing ? round(p.y) + '% · ' + usageText(s, p.amount) : usageText(s, credit ? p.amount : p.y, !credit && p?.estimated)}`;
+        let header = `${periodText(s)} / ${merged ? transition : s.billing ? feeNumber(p.y) + '% (구독료) · ' + usageText(s, p.amount) : usageText(s, credit ? p.amount : p.y, !credit && p?.estimated)}`;
         if (e) {
           header += ` · ${eventLabels[e.kind]}${e.count > 1 ? ' · ' + e.count + '건' : ''}`;
           rows.push(`${merged ? '' : transition + ' · '}관측 ${timeRange(e.fromTime, e.time)}`);
@@ -524,7 +534,7 @@
         const match = traces.map(s => near(s, p, py, x.invert(p))).filter(value => value && value.distance <= 8).sort((a, b) => a.distance - b.distance)[0];
         const predicted = forecastTrends.map(s => nearForecast(s, p, py, x.invert(p))).filter(value => value && value.distance <= 8).sort((a, b) => a.distance - b.distance)[0];
         if (match && (!predicted || match.distance <= predicted.distance + .01)) {
-          const target = svg.node().querySelector(`[data-details-line="${match.s.id}-${match.s.w}"]`) || hit.node();
+          const target = svg.node().querySelector(`[data-details-line="${seriesKey(match.s)}"]`) || hit.node();
           target.focus({preventScroll: true}); clear(); openDetails(match.s, match.p.time, target);
         }
       }

@@ -1,0 +1,58 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - run: npx playwright install --with-deps chromium
+      - name: Build and verify Linux
+        if: runner.os == 'Linux'
+        run: |
+          npm run build:webview
+          npm run verify:release
+      - name: Build, verify and package Windows/WSL VSIX
+        if: runner.os == 'Windows'
+        run: npm run package
+      - name: Upload verified package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: usage-atlas-vsix
+          path: |
+            usage-atlas-*.vsix
+            usage-atlas-*.vsix.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload synthetic verification reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verification-${{ matrix.os }}
+          path: |
+            test-release-regression-*.json
+            test-release-*.log
+            test-analysis-host.json
+          if-no-files-found: warn
+          retention-days: 14

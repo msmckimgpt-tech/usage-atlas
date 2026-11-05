@@ -1,0 +1,57 @@
+{
+  "version": "2026-11-03.1"
+, "currency": "USD"
+, "kind": "undiscounted-monthly-web"
+, "historicalPrices": false
+, "providers": {
+    "codex": {
+      "plans": {
+        "plus": 20
+      , "prolite": 100
+      , "pro": 200
+      , "promax": 500
+      , "go": 8
+      }
+    , "usdPerCredit": 0.04
+    , "sources": [
+        "https://chatgpt.com/backend-api/checkout_pricing_config/configs/US"
+      , "https://learn.chatgpt.com/docs/pricing"
+      , "https://help.openai.com/en/articles/12642688"
+      ]
+    , "planIdentityEvidence": {
+        "extension": "openai.chatgpt-26.1021.22027-win32-x64"
+      , "mapping": "prolite=Pro 100; pro=Pro 200; promax=Pro 500"
+      }
+    , "creditPriceEvidence": {
+        "url": "https://chatgpt.com/backend-api/checkout_pricing_config/configs/US"
+      , "country_code": "US"
+      , "currency": "USD"
+      , "field": "currency_config.amount_per_credit"
+      , "value": 0.04
+      , "amount_basis": "undiscounted before tax"
+      , "checkedAt": "2026-11-03"
+      }
+    }
+  , "claude": {
+      "plans": {
+        "pro": 20
+      , "pro:default_claude_pro": 20
+      , "max:default_claude_max_5x": 100
+      , "team:default_claude_max_5x": 100
+      , "max:default_claude_max_20x": 200
+      , "team:default_claude_max_20x": 200
+      }
+    , "usdPerCredit": 1
+    , "sources": [
+        "https://claude.com/pricing"
+      , "https://support.claude.com/en/articles/11049741-what-is-the-max-plan"
+      ]
+    }
+  }
+, "notes": [
+    "USD web monthly list prices; exclude annual discounts, promotions and taxes."
+  , "Codex uses the public US USD checkout configuration amount_per_credit=0.04 as a list-price comparison, not an actual receipt or promotional-credit cash payment."
+  , "Current verified list prices are used for historical comparison; this is not a historical invoice."
+  ]
+, "verifiedAt": "2026-11-03"
+}

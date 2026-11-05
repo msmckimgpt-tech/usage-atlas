@@ -1,0 +1,26 @@
+name: Bug report
+about: Report an issue using synthetic or anonymized evidence.
+description: Report an issue without account credentials or private conversations.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: Do not include tokens, raw conversation logs, account exports, or personal paths.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction with synthetic or anonymized input
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Usage Atlas / VS Code version and Windows or WSL
+    validations:
+      required: true

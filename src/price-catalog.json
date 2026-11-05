@@ -1,0 +1,393 @@
+{
+  "schemaVersion": 1
+, "version": "2026-10-22.2"
+, "verifiedAt": "2026-10-22"
+, "currency": "USD"
+, "unit": "per-million-tokens"
+, "historicalRates": false
+, "sources": [
+    {
+      "id": "openai-api"
+    , "url": "https://developers.openai.com/api/docs/pricing"
+    , "title": "Pricing | OpenAI API"
+    , "verifiedAt": "2026-10-22"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "section": "Flagship models / Standard / Short"
+      , "columns": [
+          "Model"
+        , "Input"
+        , "Output"
+        , "Cached input"
+        , "30m write"
+        , "12h write"
+        ]
+      }
+    }
+  , {
+      "id": "openai-speed"
+    , "url": "https://learn.chatgpt.com/docs/agent-configuration/speed"
+    , "title": "Speed | ChatGPT Learn"
+    , "verifiedAt": "2026-10-22"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "sections": [
+          "Fast mode"
+        , "Ultrafast mode"
+        , "API billing"
+        ]
+      }
+    }
+  , {
+      "id": "openai-subscription"
+    , "url": "https://learn.chatgpt.com/docs/pricing"
+    , "title": "Pricing | ChatGPT Learn"
+    , "verifiedAt": "2026-10-22"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "sections": [
+          "Token rates"
+        , "Speed mode"
+        ]
+      , "creditCacheWriteCharge": false
+      }
+    }
+  , {
+      "id": "openai-sol"
+    , "url": "https://developers.openai.com/api/docs/models/gpt-6-sol"
+    , "title": "GPT-6 Sol Model | OpenAI API"
+    , "verifiedAt": "2026-10-22"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "section": "Pricing / Text tokens"
+      }
+    }
+  , {
+      "id": "anthropic-api"
+    , "url": "https://platform.claude.com/docs/en/about-claude/pricing"
+    , "title": "Pricing - Claude Platform Docs"
+    , "verifiedAt": "2026-10-22"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "sections": [
+          "Model pricing"
+        , "Prompt caching"
+        , "Fast mode pricing"
+        , "Long context pricing"
+        ]
+      , "columns": [
+          "Input"
+        , "Output"
+        , "5m writes"
+        , "1h writes"
+        , "Hits and refreshes"
+        ]
+      }
+    }
+  , {
+      "id": "claude-code"
+    , "url": "https://code.claude.com/docs/en/costs"
+    , "title": "Manage costs effectively - Claude Code Docs"
+    , "verifiedAt": "2026-10-22"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "sections": [
+          "Plan usage breakdown"
+        , "Manage costs for your organization"
+        ]
+      }
+    }
+  , {
+      "id": "anthropic-models"
+    , "url": "https://platform.claude.com/docs/en/models/overview"
+    , "title": "Models overview - Claude Platform Docs"
+    , "verifiedAt": "2026-10-22"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "section": "Compare models / Claude API ID"
+      }
+    }
+  ]
+, "policies": {
+    "codex": {
+      "id": "codex-included-weighted-api-equivalent-v1"
+    , "kind": "cost-equivalent"
+    , "sourceIds": [
+        "openai-api"
+      , "openai-speed"
+      , "openai-subscription"
+      ]
+    , "modeMultipliers": {
+        "Standard": 1
+      , "Fast": 2.5
+      , "Ultrafast": 8
+      }
+    , "purchasedCreditMultipliers": {
+        "Standard": 1
+      , "Fast": 2
+      , "Ultrafast": 6
+      }
+    , "notes": [
+        "API 표준 단가에 구독 포함 사용량의 속도 배율(Fast 2.5배, Ultrafast 8배)을 적용한 비교용 환산 추정액입니다."
+      , "실제 API 청구액·구매 크레딧·구독 한도·공식 작업 수가 아닙니다. API/구매 크레딧 배율은 Fast 2배, Ultrafast 6배로 다릅니다."
+      , "비교 정책은 단기 문맥 표준 요율을 기준으로 하며 API 장문 할증·지역·도구 요금·할인·세금을 포함하지 않습니다."
+      , "Codex 크레딧에는 별도 캐시 쓰기 요금이 없으나 이 API 기반 환산에서 관측되지 않은 쓰기 항목을 0으로 간주하지 않습니다."
+      , "호출별 구매 크레딧 차감 추정은 별도 공식 크레딧 단가표와 구매 배율을 사용합니다. 구독 환산 단위는 포함 사용량 배율을 적용하며 실제 구독 크레딧 잔액을 뜻하지 않습니다."
+      ]
+    }
+  , "claude": {
+      "id": "claude-first-party-api-equivalent-v1"
+    , "kind": "cost-equivalent"
+    , "sourceIds": [
+        "anthropic-api"
+      , "claude-code"
+      , "anthropic-models"
+      ]
+    , "notes": [
+        "Claude API 공개 단가의 토큰 환산 추정액이며 Claude Code 구독 실제 청구액·크레딧·공식 한도가 아닙니다."
+      , "지역·도구 요금·할인·세금을 포함하지 않으며 5분/1시간 캐시 쓰기는 각각 관측된 토큰만 계산합니다."
+      ]
+    }
+  }
+, "models": {
+    "gpt-6-astra": {
+      "provider": "codex"
+    , "sourceId": "openai-api"
+    , "input": 10
+    , "cached": 1
+    , "output": 50
+    , "cacheWrite30m": 12.5
+    , "cacheWrite12h": 25
+    , "modes": [
+        "Standard"
+      , "Fast"
+      , "Ultrafast"
+      ]
+    }
+  , "gpt-6.1-sol": {
+      "provider": "codex"
+    , "sourceId": "openai-api"
+    , "input": 2
+    , "cached": 0.1
+    , "output": 10
+    , "cacheWrite30m": 2.5
+    , "cacheWrite12h": 5
+    , "modes": [
+        "Standard"
+      , "Fast"
+      , "Ultrafast"
+      ]
+    }
+  , "gpt-6-sol": {
+      "provider": "codex"
+    , "sourceId": "openai-sol"
+    , "input": 2
+    , "cached": 0.2
+    , "output": 10
+    , "cacheWrite30m": 2.5
+    , "cacheWrite12h": null
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    }
+  , "gpt-6-luna": {
+      "provider": "codex"
+    , "sourceId": "openai-api"
+    , "input": 0.1
+    , "cached": 0.01
+    , "output": 0.5
+    , "cacheWrite30m": 0.125
+    , "cacheWrite12h": 0.25
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    }
+  , "claude-fable-5-1": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 10
+    , "cached": 0.25
+    , "output": 50
+    , "cacheWrite5m": 12.5
+    , "cacheWrite1h": 20
+    , "modes": [
+        "Standard"
+      ]
+    }
+  , "claude-opus-5-5": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 4
+    , "cached": 0.2
+    , "output": 20
+    , "cacheWrite5m": 5
+    , "cacheWrite1h": 8
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    , "fastMultiplier": 2
+    }
+  , "claude-sonnet-5-5": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 2
+    , "cached": 0.1
+    , "output": 10
+    , "cacheWrite5m": 2.5
+    , "cacheWrite1h": 4
+    , "modes": [
+        "Standard"
+      ]
+    }
+  , "claude-haiku-5-5": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 0.1
+    , "cached": 0.01
+    , "output": 0.5
+    , "cacheWrite5m": 0.125
+    , "cacheWrite1h": 0.2
+    , "modes": [
+        "Standard"
+      ]
+    , "longThreshold": 100000
+    , "longMultiplier": 5
+    }
+  , "claude-opus-5": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 5
+    , "cached": 0.5
+    , "output": 25
+    , "cacheWrite5m": 6.25
+    , "cacheWrite1h": 10
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    , "fastMultiplier": 2
+    }
+  , "claude-opus-4-8": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 5
+    , "cached": 0.5
+    , "output": 25
+    , "cacheWrite5m": 6.25
+    , "cacheWrite1h": 10
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    , "fastMultiplier": 2
+    }
+  , "claude-opus-4-7": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 5
+    , "cached": 0.5
+    , "output": 25
+    , "cacheWrite5m": 6.25
+    , "cacheWrite1h": 10
+    , "modes": [
+        "Standard"
+      ]
+    }
+  , "claude-opus-4-6": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 5
+    , "cached": 0.5
+    , "output": 25
+    , "cacheWrite5m": 6.25
+    , "cacheWrite1h": 10
+    , "modes": [
+        "Standard"
+      ]
+    }
+  , "claude-sonnet-4-6": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 3
+    , "cached": 0.3
+    , "output": 15
+    , "cacheWrite5m": 3.75
+    , "cacheWrite1h": 6
+    , "modes": [
+        "Standard"
+      ]
+    }
+  , "claude-sonnet-4-5": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 3
+    , "cached": 0.3
+    , "output": 15
+    , "cacheWrite5m": 3.75
+    , "cacheWrite1h": 6
+    , "modes": [
+        "Standard"
+      ]
+    , "unverifiedLongAbove": 200000
+    }
+  , "claude-haiku-4-5": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "input": 1
+    , "cached": 0.1
+    , "output": 5
+    , "cacheWrite5m": 1.25
+    , "cacheWrite1h": 2
+    , "modes": [
+        "Standard"
+      ]
+    , "unverifiedLongAbove": 200000
+    }
+  }
+, "creditModels": {
+    "gpt-6-astra": {
+      "input": 250
+    , "cached": 25
+    , "output": 1250
+    }
+  , "gpt-6.1-sol": {
+      "input": 50
+    , "cached": 2.5
+    , "output": 250
+    }
+  , "gpt-6-sol": {
+      "input": 50
+    , "cached": 5
+    , "output": 250
+    }
+  , "gpt-6-luna": {
+      "input": 2.5
+    , "cached": 0.25
+    , "output": 12.5
+    }
+  }
+}

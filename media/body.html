@@ -1,0 +1,72 @@
+<div id="usage-atlas">
+  <nav class="ua-providers" aria-label="제공자 표시">
+    <button id="ua-codex" class="ua-provider" type="button" aria-pressed="false">
+      <span class="ua-provider-head"><span class="ua-dot ua-dot-codex"></span><strong>Codex</strong><span class="ua-check" aria-hidden="true">✓</span></span>
+      <span class="ua-quota"><span class="ua-window"><i class="ua-line"></i>5시간</span><span data-legend-cell="codex-five">-</span></span>
+      <span class="ua-quota"><span class="ua-window"><i class="ua-line ua-week"></i>주간</span><span data-legend-cell="codex-week">-</span></span>
+      <span id="ua-codex-status" class="ua-provider-status">수집 대기</span>
+      <span id="ua-codex-credit" class="ua-provider-credit"></span>
+    </button>
+    <button id="ua-claude" class="ua-provider" type="button" aria-pressed="false">
+      <span class="ua-provider-head"><span class="ua-dot ua-dot-claude"></span><strong>Claude Code</strong><span class="ua-check" aria-hidden="true">✓</span></span>
+      <span class="ua-quota"><span class="ua-window"><i class="ua-line"></i>5시간</span><span data-legend-cell="claude-five">-</span></span>
+      <span class="ua-quota"><span class="ua-window"><i class="ua-line ua-week"></i>주간</span><span data-legend-cell="claude-week">-</span></span>
+      <span id="ua-claude-status" class="ua-provider-status">수집 대기</span>
+      <span id="ua-claude-credit" class="ua-provider-credit"></span>
+    </button>
+  </nav>
+  <div class="ua-toolbar" role="group" aria-label="그래프 설정">
+    <select id="ua-mode" aria-label="표시 지표"><option value="usage">사용률</option><option value="delta">변화량</option><option value="total">누적</option></select>
+    <select id="ua-basis" aria-label="비교 기준"><option value="current">현재 한도</option><option value="base">기본 요금제</option></select>
+    <label class="ua-toggle" data-tooltip="기본 요금제 100%, 500%, 2000% 기준선" title="기본 요금제 100%, 500%, 2000% 기준선"><input id="ua-refs" type="checkbox">기준선</label>
+    <div class="ua-credit-controls"><label class="ua-toggle"><input id="ua-credit" type="checkbox"><span><span class="ua-credit-long">추가 </span>크레딧<span class="ua-credit-long"> 포함</span></span></label><div class="ua-credit-basis" role="radiogroup" aria-label="크레딧 환산 기준"><label title="관측한 구독 사용률에 비교하여 환산"><input id="ua-credit-subscription" type="radio" name="ua-credit-basis" value="subscription" checked>구독</label><label title="공식 월 기본 구독료 대비 추가 지출 비율"><input id="ua-credit-billing" type="radio" name="ua-credit-basis" value="billing">금액</label></div><select id="ua-credit-mode" aria-label="크레딧 표시 방식" title="Codex: 관측 잔액 감소(크레딧), Claude: 확인된 지출(USD). 사용량 합산은 동일 계정·요금제의 관측값으로 자동 환산합니다."><option value="money">크레딧·금액</option><option value="estimate">사용량에 누적</option></select></div>
+    <button id="ua-settings" type="button" aria-label="설정" title="설정">⚙</button>
+  </div>
+  <div class="ua-graph">
+    <svg id="ua-chart" role="group" aria-label="Codex와 Claude Code의 5시간 실선 및 주간 점선 사용량과 초기화 시각. 선을 클릭하거나 선에 초점을 두고 Enter 또는 Space로 상세 분석을 엽니다. 가로 드래그로 확대, Ctrl 휠로 마우스 위치 기준 확대 축소, Shift 휠로 수평 이동합니다."></svg>
+    <div id="ua-tooltip" class="ua-tip" role="tooltip" hidden></div>
+    <div id="ua-navigator" class="ua-navigator" role="group" aria-label="표시 기간 조절" aria-describedby="ua-nav-help" title="몸통 드래그: 이동 · 양 끝 드래그: 기간 조절 · 더블클릭: 설정한 기본 기간">
+      <div class="ua-nav-rail"></div><span id="ua-nav-now" class="ua-nav-now" aria-hidden="true"></span>
+      <div id="ua-nav-thumb" class="ua-nav-thumb">
+        <div id="ua-nav-pan" class="ua-nav-pan" role="slider" tabindex="0" aria-label="표시 기간 이동" aria-orientation="horizontal"></div>
+        <div id="ua-nav-start" class="ua-nav-handle ua-nav-start" role="slider" tabindex="0" aria-label="표시 시작 날짜" aria-orientation="horizontal"></div>
+        <div id="ua-nav-end" class="ua-nav-handle ua-nav-end" role="slider" tabindex="0" aria-label="표시 종료 날짜" aria-orientation="horizontal"></div>
+      </div>
+    </div>
+    <div id="ua-range" class="ua-foot" aria-live="polite"></div>
+    <div id="ua-environment" class="ua-foot ua-environment"></div>
+    <span id="ua-nav-help" class="ua-sr-only">몸통을 드래그하면 기간을 이동하고 양 끝을 드래그하면 범위를 조절합니다. 더블클릭 또는 Home으로 설정한 과거 기간과 현재 이후 1주를 표시합니다. 방향키로 이동, 더하기와 빼기로 확대 축소합니다.</span>
+  </div>
+  <dialog id="ua-details" class="ua-details" aria-modal="true" aria-labelledby="ua-details-title" aria-describedby="ua-details-context">
+    <header class="ua-details-header"><div><h2 id="ua-details-title">사용량 상세 분석</h2><p id="ua-details-context"></p></div><button id="ua-details-close" type="button" aria-label="상세 분석 닫기" autofocus>닫기</button></header>
+    <div id="ua-details-tabs" class="ua-details-tabs" role="tablist" aria-label="상세 분석 보기">
+      <button id="ua-tab-report" type="button" role="tab" aria-selected="true" aria-controls="ua-panel-report" data-details-tab="report">사용 보고서</button>
+      <button id="ua-tab-conversation" type="button" role="tab" aria-selected="false" aria-controls="ua-panel-conversation" data-details-tab="conversation" tabindex="-1">대화</button>
+      <button id="ua-tab-coverage" type="button" role="tab" aria-selected="false" aria-controls="ua-panel-coverage" data-details-tab="coverage" tabindex="-1">수집 범위</button>
+      <button id="ua-tab-performance" type="button" role="tab" aria-selected="false" aria-controls="ua-panel-performance" data-details-tab="performance" tabindex="-1">성능·비교</button>
+      <button id="ua-tab-history" type="button" role="tab" aria-selected="false" aria-controls="ua-panel-history" data-details-tab="history" tabindex="-1">이력·제외</button>
+    </div>
+    <div id="ua-details-scroll" class="ua-details-scroll">
+      <form id="ua-details-filters" class="ua-details-filters" aria-label="분석 필터">
+        <label>세션<select name="session" aria-label="세션 필터"><option value="">전체</option></select></label>
+        <label>요청<select name="turnId" aria-label="요청 필터"><option value="">전체</option></select></label>
+        <label>프로젝트<select name="project" aria-label="프로젝트 필터"><option value="">전체</option></select></label>
+        <label>모델<select name="model" aria-label="모델 필터"><option value="">전체</option></select></label>
+        <label>추론 수준<select name="effort" aria-label="추론 수준 필터"><option value="">전체</option></select></label>
+        <label>모드<select name="mode" aria-label="모드 필터"><option value="">전체</option></select></label>
+        <label>입력 구간<select name="inputBand" aria-label="입력 구간 필터"><option value="">전체</option></select></label>
+        <label>캐시 구간<select name="cacheBand" aria-label="캐시 구간 필터"><option value="">전체</option></select></label>
+        <button id="ua-details-filter-reset" type="button">필터 초기화</button>
+      </form>
+      <p id="ua-details-status" role="status" aria-live="polite"></p><button id="ua-details-retry" type="button" hidden>다시 불러오기</button>
+      <section id="ua-panel-report" role="tabpanel" aria-labelledby="ua-tab-report" tabindex="0"></section>
+      <section id="ua-panel-conversation" role="tabpanel" aria-labelledby="ua-tab-conversation" tabindex="0" hidden><p>세션·호출의 대화 보기에서 선택하세요.</p></section>
+      <section id="ua-panel-coverage" role="tabpanel" aria-labelledby="ua-tab-coverage" tabindex="0" hidden></section>
+      <section id="ua-panel-performance" role="tabpanel" aria-labelledby="ua-tab-performance" tabindex="0" hidden></section>
+      <section id="ua-panel-history" role="tabpanel" aria-labelledby="ua-tab-history" tabindex="0" hidden></section>
+      <section id="ua-details-diagnostics" hidden aria-label="진단 지표"></section>
+    </div>
+    <footer class="ua-details-footer"><p id="ua-details-provenance"></p><p>대화는 선택할 때 로컬 기록에서만 읽습니다. 금액·크레딧·구독 환산은 추정치입니다.</p><p><a href="https://github.com/jisoq/Codexon" target="_blank" rel="noopener noreferrer">Codexon · jisoq</a> · © 2026 · <a href="https://github.com/jisoq/Codexon/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">라이선스 전문</a></p></footer>
+  </dialog>
+</div>
+

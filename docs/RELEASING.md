@@ -1,5 +1,7 @@
 # 배포 절차
 
+현재는 사용자의 선택에 따라 소스와 VSIX를 GitHub Releases에 수동 공개합니다. 자동화 워크플로는 docs/workflows의 템플릿으로만 보관하며 활성화하지 않습니다. 현재 공개 상태는 [SETUP-STATUS.md](SETUP-STATUS.md)를 참조하세요. 아래 자동 배포 절차는 이후 별도 활성화할 때 사용합니다.
+
 ## GitHub Releases
 
 1. package.json과 package-lock.json의 루트 확장 버전을 함께 변경합니다. 의존성 버전은 별도로 유지합니다.

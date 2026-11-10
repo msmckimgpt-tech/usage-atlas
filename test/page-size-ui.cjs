@@ -35,6 +35,8 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
       };
     });
     const check = async name => {
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.waitForFunction(() => {const chart = document.getElementById('ua-chart'); return Math.abs(chart.getBoundingClientRect().height - chart.viewBox.baseVal.height) < 1;});
       const b = await bounds();
       assert.ok(b.root.x >= 7 && b.root.y >= 7, name + ' top/left inside');
       assert.ok(b.root.x + b.root.width <= b.viewport[0] - 7 && b.root.y + b.root.height <= b.viewport[1] - 7, name + ' right/bottom inside');

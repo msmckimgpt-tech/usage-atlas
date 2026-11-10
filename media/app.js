@@ -20,6 +20,7 @@
   if ([3, 4, 5].includes(saved?.version)) {
     for (const [key, values] of Object.entries({mode: ['usage', 'delta', 'total'], basis: ['current', 'base'], theme: ['system', 'light', 'dark'], creditMode: ['money', 'estimate']})) if (values.includes(saved[key])) state[key] = saved[key];
     for (const key of ['credit', 'refs']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
+    if (Array.isArray(saved.range) && saved.range.length === 2 && saved.range.every(Number.isFinite) && saved.range[0] < saved.range[1]) state.range = [...saved.range];
   }
   state.focusedProvider = providerFocus.restore(ids, saved);
   state.creditBasis = ['subscription', 'billing'].includes(model.creditBasis) ? model.creditBasis : defaults.creditBasis;
@@ -678,16 +679,16 @@
       }
       model = e.data;
       if (['subscription', 'billing'].includes(model.creditBasis) && (!basisPending || model.creditBasis === basisPending)) {state.creditBasis = model.creditBasis; basisPending = null;}
-      if (changed || e.data.resetView) {state.range = null; if (changed) save();}
+      if (changed) {state.range = null; save();}
       requestDraw();
     } else if (e.data?.type === 'creditBasisRejected') {state.creditBasis = e.data.value === 'billing' ? 'billing' : 'subscription'; basisPending = null; save(); requestDraw();}
     else if (e.data?.type === 'resetView') resetRange();
   });
   let lastWidth, lastHeight;
   const resize = new ResizeObserver(entries => {const {width, height} = entries[0].contentRect; if (width !== lastWidth || height !== lastHeight) {lastWidth = width; lastHeight = height; requestDraw();}}); resize.observe(el('chart'));
-  window.addEventListener('pagehide', () => {resize.disconnect(); cancelAnimationFrame(raf);});
+  window.addEventListener('pagehide', () => {save(); resize.disconnect(); cancelAnimationFrame(raf);});
   const ready = () => api.postMessage({type: 'ready', revision: model.revision});
-  document.addEventListener('visibilitychange', () => {if (!document.hidden) ready();});
+  document.addEventListener('visibilitychange', () => {if (document.hidden) save(); else ready();});
   draw(); ready();
 })();
 

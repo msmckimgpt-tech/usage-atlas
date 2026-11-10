@@ -12,8 +12,9 @@ async function port() {
   return value;
 }
 (async () => {
-  const user = path.join(root, '.test-analysis-user');
-  for (const name of ['.test-analysis-extensions', '.test-analysis-workspace', '.test-analysis-user/User']) await fs.mkdir(path.join(root, name), {recursive: true});
+  const user = await fs.mkdtemp(path.join(root, '.test-analysis-user-'));
+  for (const name of ['.test-analysis-extensions', '.test-analysis-workspace']) await fs.mkdir(path.join(root, name), {recursive: true});
+  await fs.mkdir(path.join(user, 'User'), {recursive: true});
   await fs.writeFile(path.join(user, 'User/settings.json'), JSON.stringify({'usageAtlas.enabled': false, 'usageAtlas.intervalSeconds': 60, 'usageAtlas.analysisEnabled': true, 'usageAtlas.diagnosticsEnabled': true, 'extensions.autoUpdate': false, 'update.mode': 'none', 'workbench.startupEditor': 'none', 'security.workspace.trust.enabled': false}));
   const debugPort = String(await port());
   const env = {...process.env, CODEX_HOME: path.join(root, '.test-analysis-input/codex'), CLAUDE_CONFIG_DIR: path.join(root, '.test-analysis-input/claude'), USAGE_ATLAS_TEST_DEBUG_PORT: debugPort};

@@ -40,6 +40,34 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     result.cases.push('responsive layout preserves period and invalid values fall back to original ±7-day view');
     await update({chartHistoryDays: 30}); await page.setViewportSize({width: 1440, height: 900}); await painted(); await page.evaluate(() => document.activeElement?.blur());
     await page.screenshot({path: path.join(root, 'screenshots/history-range-30-days.png')});
+    await update({chartHistoryDays: 30});
+    await page.locator('#ua-mode').selectOption('total'); await page.locator('#ua-basis').selectOption('base');
+    await page.locator('#ua-nav-pan').focus(); await page.keyboard.press('+'); await page.keyboard.press('ArrowLeft'); await painted();
+    const selected = (await range()).slice(0, 2), saved = await page.evaluate(() => structuredClone(window.savedState));
+    assert.deepEqual(saved.range, selected);
+    const restore = async state => {
+      const escaped = value => JSON.stringify(value).replace(/</g, '\\u003c');
+      const document = html.replace('getState:()=>null', () => 'getState:()=>(' + escaped(state) + ')').replace(escaped(initial), () => escaped(model));
+      await page.goto('about:blank'); await page.setContent(document); await painted();
+    };
+    for (const version of [3, 4, 5]) {
+      await restore({...saved, version});
+      assert.deepEqual((await range()).slice(0, 2), selected);
+      assert.equal(await page.locator('#ua-mode').inputValue(), 'total'); assert.equal(await page.locator('#ua-basis').inputValue(), 'base');
+      await update({now: model.now + 60000}); assert.deepEqual((await range()).slice(0, 2), selected);
+      await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+      assert.deepEqual(await page.evaluate(() => window.savedState.range), selected);
+    }
+    result.cases.push('destroy/recreate restores absolute range and preferences from state versions 3/4/5; new data and pagehide preserve it');
+    for (const invalid of [null, [], [now], [now, now], [now, now - day], ['1', '2'], [null, now], [now - day, now, now + day]]) {
+      await restore({...saved, range: invalid}); await expectRange(30);
+      assert.equal(await page.locator('#ua-chart').evaluate(node => /NaN|Infinity/.test(node.innerHTML)), false);
+    }
+    await restore({...saved, range: [model.now - 1000 * day, model.now - 990 * day]});
+    assert.deepEqual((await range()).slice(0, 2), [model.firstObserved, model.firstObserved + 10 * day]);
+    await restore(null); await expectRange(30);
+    await restore(saved); await page.locator('#ua-navigator').dblclick(); await painted(); await expectRange(30);
+    result.cases.push('invalid ranges use defaults, expired ranges clamp to retained records, fresh panels and explicit double click still reset');
     assert.deepEqual(result.errors, []); result.status = 'PASS';
   } finally {await browser.close(); fs.writeFileSync(path.join(root, 'test-history-range-ui.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));}
 })().catch(error => {console.error(error); process.exitCode = 1;});

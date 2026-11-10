@@ -106,20 +106,20 @@ test('bootstrap preserves CSP escaping and ready acknowledgement skips duplicate
   panel.view();
   assert.equal(panel.messages.length, 0);
 });
-test('hidden and existing views refresh their current data and reset range once', async t => {
+test('hidden and existing views refresh data without a range reset', async t => {
   const h = await harness(t); await h.open();
   const panel = h.panels[0], initial = h.bootstrap(panel);
   await panel.receive({type: 'ready', revision: initial.revision});
   panel.visible = false; panel.view(); assert.equal(h.api.isUiReady(), false);
   panel.visible = true; panel.view();
   await panel.receive({type: 'ready', revision: initial.revision});
-  assert.equal(panel.messages.length, 1); assert.equal(panel.messages[0].resetView, true);
-  await h.open(); assert.equal(panel.messages.length, 2); assert.equal(panel.messages[1].resetView, true);
+  assert.equal(panel.messages.length, 1); assert.equal(panel.messages[0].resetView, undefined);
+  await h.open(); assert.equal(panel.messages.length, 2); assert.equal(panel.messages[1].resetView, undefined);
   panel.dispose(); await h.open();
   await panel.receive({type: 'ready', revision: -1});
   assert.equal(h.panels[1].messages.length, 0, 'a disposed view cannot publish into the new one');
 });
-test('a message rejected during view teardown is retried with its pending range reset', async t => {
+test('a message rejected during view teardown is retried without changing the range', async t => {
   const h = await harness(t); await h.open();
   const panel = h.panels[0]; await panel.receive({type: 'ready', revision: h.bootstrap(panel).revision});
   const post = panel.webview.postMessage;
@@ -127,7 +127,7 @@ test('a message rejected during view teardown is retried with its pending range 
   await h.open(); await new Promise(resolve => setImmediate(resolve));
   panel.webview.postMessage = post;
   panel.view(); await new Promise(resolve => setImmediate(resolve));
-  assert.equal(panel.messages.length, 1); assert.equal(panel.messages[0].resetView, true);
+  assert.equal(panel.messages.length, 1); assert.equal(panel.messages[0].resetView, undefined);
 });
 test('opening follows records saved by another window without starting provider requests', async t => {
   const h = await harness(t); assert.equal(h.api.snapshot().data.codex.last.windows.week.used, 30);
@@ -324,4 +324,21 @@ test('vertical credit basis persists immediately to the shared page/preview sett
   await panel.receive({type: 'creditBasis', value: 'unexpected'}); assert.equal(h.settings.creditBasis, 'billing');
   await Promise.all([panel.receive({type: 'creditBasis', value: 'subscription'}), panel.receive({type: 'creditBasis', value: 'billing'})]);
   assert.equal(h.settings.creditBasis, 'billing'); assert.equal(h.calls.length, 0);
+});
+
+
+test('data updated while hidden reaches the resumed view without resetting its range', async t => {
+  const h = await harness(t); await h.open();
+  const panel = h.panels[0], initial = h.bootstrap(panel);
+  await panel.receive({type: 'ready', revision: initial.revision});
+  panel.visible = false; panel.view(); h.appendStored();
+  await h.open(); assert.equal(panel.messages.length, 0, 'wait for the resumed document acknowledgement');
+  await panel.receive({type: 'ready', revision: initial.revision});
+  assert.equal(panel.messages.at(-1).data.codex.last.windows.week.used, 33);
+  assert.equal(panel.messages.at(-1).resetView, undefined);
+  const count = panel.messages.length;
+  panel.visible = false; panel.view(); panel.visible = true; panel.view();
+  await panel.receive({type: 'ready', revision: panel.messages.at(-1).revision});
+  assert.equal(panel.messages.length, count + 1, 'returning refreshes the clock even at the same data revision');
+  assert.equal(panel.messages.at(-1).resetView, undefined); assert.equal(h.calls.length, 0);
 });

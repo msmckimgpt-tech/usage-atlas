@@ -563,7 +563,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     const reopened = await browser.newPage({viewport: {width: 1024, height: 900}});
     await reopened.setContent(doc.replace('getState:()=>null', `getState:()=>({version:4,range:[${now - 86400000},${now}]})`));
     await reopened.evaluate(data => (window.uiModel=data,window.dispatchEvent(new MessageEvent('message', {data}))), fixture()); await reopened.waitForTimeout(60);
-    assert.equal(await reopened.locator('#ua-chart').getAttribute('data-domain-start'), String(now - week)); await reopened.close();
+    assert.equal(await reopened.locator('#ua-chart').getAttribute('data-domain-start'), String(now - 86400000)); assert.equal(await reopened.locator('#ua-chart').getAttribute('data-domain-end'), String(now)); await reopened.close();
     assert.deepEqual(report.errors, []); report.status = 'PASS';
   } catch (e) {report.status = 'FAIL'; report.failure = e.message; throw e;}
   finally {await browser.close(); fs.writeFileSync(path.join(dir, 'test-ui.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));}

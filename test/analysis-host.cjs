@@ -44,7 +44,7 @@ exports.run = async () => {
       const file = path.join(api.storagePath, 'history.jsonl');
       await fs.writeFile(file + '.fixture.tmp', jsonl(records)); await fs.rename(file + '.fixture.tmp', file);
     });
-    const metadata = {capacities: [], creditConversions: [], exclusions: [], goals: {}, collectors: Object.fromEntries(['codex', 'claude'].map(id => [id, {last: now, next: now + 3600000, errors: 0, message: 'fixture'}]))};
+    const metadata = {capacities: [], creditConversions: [], exclusions: [], goals: {}, collectors: Object.fromEntries(['codex', 'claude'].map(id => [id, {last: now, next: now + 3600000, backoffUntil: now + 3600000, errors: 0, message: 'fixture'}]))};
     await fs.writeFile(path.join(api.storagePath, 'metadata.json'), JSON.stringify(metadata));
     await cfg.update('claudeConfigDir', claudeDir, vscode.ConfigurationTarget.Global);
     await cfg.update('intervalSeconds', 60, vscode.ConfigurationTarget.Global);
@@ -81,6 +81,40 @@ exports.run = async () => {
       if (!frame) await new Promise(resolve => setTimeout(resolve, 25));
     }
     assert.ok(frame, 'real CSP Webview renders graph detail targets'); result.webviewReadyMs = Date.now() - started;
+    const resolveChartFrame = async () => {
+      const until = Date.now() + 15000;
+      while (Date.now() < until) {
+        for (const page of context.pages()) for (const candidate of page.frames()) {
+          if (await candidate.locator('#ua-chart').isVisible().catch(() => false)) return candidate;
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      throw new Error('Usage Atlas Webview did not resume');
+    };
+    const chartRange = () => frame.locator('#ua-chart').evaluate(node => [+node.dataset.domainStart, +node.dataset.domainEnd]);
+    await frame.locator('#ua-nav-pan').focus(); await frame.locator('#ua-nav-pan').press('+'); await frame.locator('#ua-nav-pan').press('ArrowLeft');
+    await frame.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const selectedRange = await chartRange(), previousTransparency = cfg.get('tooltipTransparency', 14);
+    const otherTab = await vscode.workspace.openTextDocument({content: 'Usage Atlas tab-switch fixture', language: 'plaintext'});
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await vscode.window.showTextDocument(otherTab, {viewColumn: vscode.ViewColumn.Active, preview: false});
+      const hiddenDeadline = Date.now() + 5000;
+      while (api.isUiReady() && Date.now() < hiddenDeadline) await new Promise(resolve => setTimeout(resolve, 25));
+      assert.equal(api.isUiReady(), false, 'background Webview releases readiness');
+      await cfg.update('tooltipTransparency', 20 + cycle, vscode.ConfigurationTarget.Global);
+      await vscode.commands.executeCommand('usageAtlas.open'); frame = await resolveChartFrame();
+      result.tabRangeAttempts ||= []; result.tabRangeAttempts.push({cycle, selectedRange, resumedRange: await chartRange()});
+      await frame.waitForFunction(range => {const node = document.getElementById('ua-chart'); return +node.dataset.domainStart === range[0] && +node.dataset.domainEnd === range[1];}, selectedRange);
+      assert.deepEqual(await chartRange(), selectedRange, 'actual tab switching preserves the selected absolute range');
+      await vscode.commands.executeCommand('usageAtlas.open');
+      assert.deepEqual(await chartRange(), selectedRange, 'repeated Usage commands preserve the existing view');
+    }
+    await cfg.update('tooltipTransparency', previousTransparency, vscode.ConfigurationTarget.Global);
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+    await vscode.commands.executeCommand('usageAtlas.open'); frame = await resolveChartFrame();
+    const freshRange = await chartRange(); assert.ok(Math.abs(freshRange[1] - freshRange[0] - 14 * 86400000) < 100);
+    assert.notDeepEqual(freshRange, selectedRange, 'closing the panel creates a fresh default range on the next open');
+    result.tabRange = {switches: 3, preservedRange: true, hiddenDataUpdates: true, repeatedOpenPreserved: true, freshPanelDefaults: true, providerRequests: calls};
     const target = frame.locator('[data-details-line="codex-week"]').first();
     await target.focus(); await target.press('Enter');
     const dialog = frame.locator('#ua-details'); await dialog.waitFor({state: 'visible'});

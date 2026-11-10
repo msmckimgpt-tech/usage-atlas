@@ -13,6 +13,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     const page = await browser.newPage({viewport: {width: 1440, height: 900}});
     page.on('pageerror', error => report.errors.push(error.message));
     await page.setContent(doc);
+    const painted = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const check = async (name, start, end, width = 1440) => {
       await page.setViewportSize({width, height: 900});
       const now = (start + end) / 2;
@@ -20,12 +21,12 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
         window.dispatchEvent(new MessageEvent('message', {data: {type: 'data', now, colorMode: 'dark', data: {}}}));
         window.dispatchEvent(new MessageEvent('message', {data: {type: 'resetView'}}));
       }, now);
-      await page.waitForTimeout(40);
+      await painted();
       const frame = await page.locator('[data-chart-hit]').boundingBox();
       const span = 14 * 86400000, px = time => frame.x + (time - now + span / 2) / span * frame.width;
       await page.mouse.move(px(start), frame.y + 50);
       await page.mouse.down(); await page.mouse.move(px(end), frame.y + 50); await page.mouse.up();
-      await page.waitForTimeout(40);
+      await painted();
       const result = await page.locator('#ua-chart').evaluate(node => {
         const plot = node.querySelector('[data-chart-frame]'), frame = plot.getBoundingClientRect();
         const start = +node.dataset.domainStart, span = +node.dataset.domainEnd - start;

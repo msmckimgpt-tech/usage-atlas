@@ -49,7 +49,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   let conversationController, conversationSerial = 0, conversationScope;
   const closeConversations = () => {conversationSerial++; conversationController?.abort(); conversationScope = null; return conversationReader.close();};
   let creditBasisQueue = Promise.resolve();
-  let panel, timer, disposed = false, running = null, uiReady = false, intervalChanged = false, timerVersion = 0, revision = 0, sentRevision = -1, resetPending = false;
+  let panel, timer, disposed = false, running = null, uiReady = false, intervalChanged = false, timerVersion = 0, revision = 0, sentRevision = -1, viewRefreshPending = false;
   let bodyCache, automatic, automaticStamp, conversionInput, usableConversion;
   const automaticFile = path.join(store.dir, 'automatic-conversion.json');
   const bodyHtml = () => bodyCache ||= fs.readFile(path.join(context.extensionPath, 'media', 'body.html'), 'utf8').catch(e => {bodyCache = null; throw e;});
@@ -172,10 +172,10 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     return {type: 'data', now, firstObserved, data, creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: records.length};
   }
   async function sendView() {
-    if (!panel?.visible || !uiReady || sentRevision === revision && !resetPending) return;
-    const current = panel, version = revision, resetView = resetPending; resetPending = false; sentRevision = version;
-    const delivered = await current.webview.postMessage({...payload(), revision: version, ...(resetView ? {resetView: true} : {})});
-    if (!delivered && panel === current && sentRevision === version) {sentRevision = -1; resetPending ||= resetView;}
+    if (!panel?.visible || !uiReady || sentRevision === revision && !viewRefreshPending) return;
+    const current = panel, version = revision; viewRefreshPending = false; sentRevision = version;
+    const delivered = await current.webview.postMessage({...payload(), revision: version});
+    if (!delivered && panel === current && sentRevision === version) {sentRevision = -1; viewRefreshPending = true;}
   }
   async function publish() {revision++; updateStatus(); await sendView();}
   async function refreshStored() {
@@ -407,12 +407,12 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   async function open() {
     const [body] = await Promise.all([bodyHtml(), refreshStored()]);
     if (disposed) return;
-    if (panel) {resetPending = true; panel.reveal(); await sendView(); return;}
+    if (panel) {viewRefreshPending = true; panel.reveal(); await sendView(); return;}
     panel = vscode.window.createWebviewPanel('usageAtlas', 'Usage Atlas', vscode.ViewColumn.Active, {enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]});
     const current = panel;
-    uiReady = false; sentRevision = -1; resetPending = false;
+    uiReady = false; sentRevision = -1; viewRefreshPending = false;
     current.onDidDispose(() => {if (panel === current) {panel = undefined; uiReady = false; detailSerial++; detailController?.abort(); closeConversations();}});
-    current.onDidChangeViewState(() => {if (panel !== current) return; if (!current.visible) {uiReady = false; resetPending = true; detailSerial++; detailController?.abort(); closeConversations();} else sendView().catch(e => output.appendLine(e.message));});
+    current.onDidChangeViewState(() => {if (panel !== current) return; if (!current.visible) {uiReady = false; viewRefreshPending = true; detailSerial++; detailController?.abort(); closeConversations();} else sendView().catch(e => output.appendLine(e.message));});
     current.webview.onDidReceiveMessage(async m => {
       if (panel !== current || !m || typeof m !== 'object') return;
       if (m.type === 'ready' && !uiReady) {uiReady = true; sentRevision = Number.isSafeInteger(m.revision) ? m.revision : -1; await sendView();}

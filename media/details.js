@@ -2,6 +2,7 @@
  * Usage Atlas modal implementation; see licenses/Codexon-LICENSE.txt. */
 (() => {
   'use strict';
+  const providerName = (id, label) => globalThis.usageAtlasProviderFocus?.name(id, label) || ({codex: 'Codex', claude: 'Claude Code'}[id] || 'Antigravity');
   const labels = {
     provider: '제공자'
   , account: '계정'
@@ -412,8 +413,14 @@
     const render = () => {
       fillFilters();
       const usage = el('panel-report'); usage.replaceChildren();
-      if (finite(report.summary?.start) && finite(report.summary?.end)) el('details-context').textContent = `${selection.provider === 'codex' ? 'Codex' : 'Claude Code'} · ${{five: '5시간', week: '주간', credit: '크레딧'}[selection.window]} · ${date(report.summary.start)} – ${date(report.summary.end)} (종료 시각 제외)`;
+      if (finite(report.summary?.start) && finite(report.summary?.end)) el('details-context').textContent = `${providerName(selection.provider, getModel().data?.[selection.provider]?.last?.label)} · ${{five: '5시간', week: '주간', credit: '크레딧'}[selection.window]} · ${date(report.summary.start)} – ${date(report.summary.end)} (종료 시각 제외)`;
       if (report.analysisEnabled === false) usage.append(node('p', '세션 분석이 설정에서 꺼져 있습니다. 사용률 기록과 수집 범위는 계속 확인할 수 있습니다.', 'ua-details-note'));
+      el('details-filters').hidden = report.quotaOnly === true;
+      el('tab-conversation').hidden = report.quotaOnly === true;
+      if (report.quotaOnly) {
+        usage.append(node('p', '그룹별 한도 관측입니다. 호출·토큰·대화 및 추가 크레딧 소비는 제공되지 않습니다.', 'ua-details-note'));
+        table(usage, '사용률 관측', subset(report.observations), [['시각', row => row.time, date], ['사용률', row => finite(row.used) ? text(row.used) + '%' : '-'], ['초기화', row => row.reset, date]]);
+      } else {
       metrics(section(usage, '선택 구간 요약'), report.summary, ['sourceCallCount', 'eligibleCallCount', 'callCount', 'pricedCallCount', 'costUsd', 'knownCostUsd', 'input', 'cached', 'output', 'cacheRatio', 'sessionCount', 'requestCount']);
       const aggregate = [
         ['세션', row => row.sessionId || row.id]
@@ -448,6 +455,7 @@
       , ['구간 일치', row => ({matched: '일치', unmatched: '불일치', provisional: '잠정'}[row.matchState] || '-')]
       ]);
       table(usage, '에이전트 계층 (자체·하위 분리)', subset(report.agents), aggregate);
+      }
       const coverage = el('panel-coverage'); coverage.replaceChildren();
       metrics(section(coverage, '수집·가격 확인 범위'), report.coverage, ['sourceCallCount', 'eligibleCallCount', 'pricedCallCount', 'matchedCallCount', 'unmatchedCallCount', 'provisionalCallCount']);
       const sourceCoverage = section(coverage, '로컬 색인 범위');
@@ -458,7 +466,7 @@
       const collection = section(coverage, 'Usage Atlas 수집 상태');
       collection.append(node('p', `최근 ${date(report.collection?.last)} · 다음 ${date(report.collection?.next)}`, 'ua-details-note'));
       metrics(collection, report.collection, ['message', 'errors', 'baseIntervalSeconds', 'effectiveIntervalSeconds', 'adaptive']);
-      const connection = {onDemand: '필요할 때 연결', persistent: '연결 유지', 'https-keep-alive': 'HTTPS 연결 재사용'}[report.collection?.connection];
+      const connection = {onDemand: '필요할 때 연결', persistent: '연결 유지', 'https-keep-alive': 'HTTPS 연결 재사용', 'local-rpc': '로컬 사용량 조회'}[report.collection?.connection];
       collection.append(node('p', '수집 연결 · ' + (connection || '-'), 'ua-details-note'));
       metrics(section(coverage, '기록 저장 상태'), report.storage, ['pending', 'memory', 'bytes', 'issue', 'recovered']);
       notes(coverage, report.coverage?.notes);
@@ -609,7 +617,7 @@
         clearConversation();
         report = null; preview = null; range = null; reasonDraft = ''; pools.clear(); endpointPool.clear(); projectNames.clear(); projectNameCounts.clear(); for (const key of filterKeys) {delete filters[key]; form.elements.namedItem(key).value = '';}
         returnFocus = target?.dataset?.detailsLine || target || document.activeElement;
-        el('details-context').textContent = `${value.provider === 'codex' ? 'Codex' : 'Claude Code'} · ${{five: '5시간', week: '주간', credit: '크레딧'}[value.window]} · ${date(value.start)} – ${date(value.end)}`;
+        el('details-context').textContent = `${providerName(value.provider, getModel().data?.[value.provider]?.last?.label)} · ${{five: '5시간', week: '주간', credit: '크레딧'}[value.window]} · ${date(value.start)} – ${date(value.end)}`;
         for (const key of ['report', 'conversation', 'coverage', 'performance', 'history']) el('panel-' + key).replaceChildren();
         el('details-provenance').textContent = ''; el('details-diagnostics').replaceChildren(); activateTab('report');
         if (!dialog.open) dialog.showModal(); el('details-close').focus({preventScroll: true}); request();

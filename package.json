@@ -1,8 +1,8 @@
 {
   "name": "usage-atlas"
 , "displayName": "Usage Atlas"
-, "description": "Codex와 Claude Code 사용량 기록과 계획"
-, "version": "0.2.24"
+, "description": "Codex, Claude Code, Antigravity 사용량 기록과 계획"
+, "version": "0.3.0"
 , "publisher": "local-tools"
 , "license": "SEE LICENSE IN LICENSE"
 , "engines": {
@@ -283,6 +283,20 @@
           , "scope": "machine"
           , "description": "Claude 설정 디렉터리. 비우면 CLAUDE_CONFIG_DIR 또는 ~/.claude"
           , "order": 40
+          }
+        , "usageAtlas.antigravityEnabled": {
+            "type": "boolean"
+          , "default": true
+          , "scope": "machine"
+          , "description": "같은 확장 호스트의 Google Antigravity 또는 지정한 로컬 런타임에서 그룹별 5시간·주간 사용률을 조회합니다. 기존 수집 간격을 사용하며 별도 CLI·상주 프로세스를 실행하지 않습니다."
+          , "order": 50
+          }
+        , "usageAtlas.antigravityDataDir": {
+            "type": "string"
+          , "default": ""
+          , "scope": "machine"
+          , "description": "Antigravity 런타임 데이터 디렉터리. 비우면 ~/.gemini/antigravity입니다. 공식 확장 연결을 우선 사용하며, WSL에서는 해당 Linux 사용자의 로컬 런타임만 조회합니다. 여러 연결이 발견되면 임의 선택하지 않습니다."
+          , "order": 60
           }
         }
       }

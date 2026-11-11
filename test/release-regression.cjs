@@ -11,7 +11,7 @@ async function main() {
       ['publication', ['scripts/check-publication.cjs']]
     , ['syntax', ['test/check-syntax.cjs']]
     , ['units', ['--test', ...(await fs.readdir(path.join(root, 'test'))).filter(file => file.endsWith('.test.cjs')).map(file => 'test/' + file)]]
-    , ...['ui', 'credit-conversion-ui', 'credit-gap-ui', 'credit-basis-ui', 'preview-parity-ui', 'forecast-ui', 'time-axis-ui', 'page-size-ui', 'history-range-ui', 'amount-format-ui', 'details-ui'].map(file => [file, ['test/' + file + '.cjs']])
+    , ...['ui', 'credit-conversion-ui', 'credit-gap-ui', 'credit-basis-ui', 'preview-parity-ui', 'forecast-ui', 'time-axis-ui', 'page-size-ui', 'history-range-ui', 'amount-format-ui', 'details-ui', 'antigravity-ui'].map(file => [file, ['test/' + file + '.cjs']])
     , ...(process.platform === 'win32' ? [['vscode-native', ['test/launch-analysis-host.cjs']]] : [])
   ];
   const receipt = path.join(root, 'test-release-regression-' + version + '.json');

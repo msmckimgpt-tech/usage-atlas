@@ -1,11 +1,11 @@
 'use strict';
 const crypto = require('node:crypto');
 const {series} = require('./core.cjs');
-const providers = ['codex', 'claude'];
+const catalog = require('../media/provider-focus.js');
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const windows = ['five', 'week'];
 function selection(message, records, retentionDays = 90, now = Date.now()) {
-  if (!message || !providers.includes(message.provider) || !['five', 'week', 'credit'].includes(message.window) || typeof message.requestId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(message.requestId)) throw new Error('상세 조회 요청이 올바르지 않습니다.');
+  if (!message || !catalog.valid(message.provider) || !['five', 'week', 'credit'].includes(message.window) || typeof message.requestId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(message.requestId)) throw new Error('상세 조회 요청이 올바르지 않습니다.');
   if (![message.start, message.end, message.time].every(finite) || message.start >= message.end) throw new Error('상세 조회 기간이 올바르지 않습니다.');
   const latest = records.findLast(row => row.provider === message.provider);
   if (!latest) throw new Error('확인할 사용량 기록이 없습니다.');
@@ -25,7 +25,7 @@ function validateExclusions(values, now = Date.now()) {
   if (!Array.isArray(values) || values.length > 4096) throw new Error('지원하지 않는 분석 제외 기록입니다.');
   const seen = new Set();
   return values.map(value => {
-    if (!value || !providers.includes(value.provider) || !windows.includes(value.window) || !/^[a-f0-9]{20}$/.test(value.account) || typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value.id) || seen.has(value.id) || ![value.start, value.end, value.createdAt].every(finite) || value.start < 0 || value.start >= value.end || value.end > now + 300000 || value.createdAt < 0 || value.createdAt > now + 300000 || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 160 || /[\x00-\x1f]/.test(value.reason) || value.restoredAt != null && (!finite(value.restoredAt) || value.restoredAt < value.createdAt || value.restoredAt > now + 300000)) throw new Error('분석 제외 기록이 올바르지 않습니다.');
+    if (!value || !catalog.valid(value.provider) || !windows.includes(value.window) || !/^[a-f0-9]{20}$/.test(value.account) || typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value.id) || seen.has(value.id) || ![value.start, value.end, value.createdAt].every(finite) || value.start < 0 || value.start >= value.end || value.end > now + 300000 || value.createdAt < 0 || value.createdAt > now + 300000 || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 160 || /[\x00-\x1f]/.test(value.reason) || value.restoredAt != null && (!finite(value.restoredAt) || value.restoredAt < value.createdAt || value.restoredAt > now + 300000)) throw new Error('분석 제외 기록이 올바르지 않습니다.');
     seen.add(value.id);
     return {id: value.id, provider: value.provider, account: value.account, window: value.window, start: value.start, end: value.end, reason: value.reason, createdAt: value.createdAt, restoredAt: value.restoredAt ?? null};
   });

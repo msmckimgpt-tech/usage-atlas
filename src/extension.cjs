@@ -12,6 +12,8 @@ const billing = require('./billing.cjs');
 const {PatternBook} = require('./pattern-book.cjs');
 const forecastLearning = require('./forecast-learning.cjs');
 const adapters = require('./adapters.cjs');
+const antigravity = require('./antigravity.cjs');
+const providerCatalog = require('../media/provider-focus.js');
 const {intervalSeconds, wakeDelay, retime, adaptiveInterval, advanceOnWake} = require('./schedule.cjs');
 const {Diagnostics} = require('./diagnostics.cjs');
 const {ObservationQueue} = require('./observation-queue.cjs');
@@ -96,14 +98,22 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     } catch {}
   }
   await loadMeta(); await loadAutomatic(); await patternBook.load(); await loadLearnedForecast();
-  const latest = id => records.findLast(s => s.provider === id);
+  let antigravityAvailable = false;
+  async function detectAntigravity() {
+    antigravityAvailable = Boolean(vscode.extensions.getExtension('google.google-antigravity'));
+    if (!antigravityAvailable && cfg().get('antigravityDataDir')) {try {antigravityAvailable = (await fs.stat(path.join(antigravity.dataDir(cfg().get('antigravityDataDir')), 'daemon'))).isDirectory();} catch {}}
+  }
+  await detectAntigravity();
+  const collectorIds = () => ['codex', 'claude', ...(antigravityAvailable ? ['antigravity'] : [])];
+  const collectorId = id => providerCatalog.isAntigravity(id) ? 'antigravity' : id;
+  const latest = id => records.findLast(s => id === 'antigravity' ? providerCatalog.isAntigravity(s.provider) : s.provider === id);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10);
   let hoverCache;
   function updateStatus() {
     const key = {records, metadata, projection: projected(), forecastEnabled: cfg().get('forecastEnabled', true), creditBasis: cfg().get('creditBasis', 'subscription'), colorMode: cfg().get('colorMode', 'system'), minute: Math.floor(Date.now() / 60000), theme: vscode.window.activeColorTheme.kind, interval: maxIntervalSeconds(), enabled: cfg().get('enabled'), trusted: vscode.workspace.isTrusted, codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4)};
     if (hoverCache && Object.keys(key).every(k => key[k] === hoverCache[k])) return;
     const message = !key.enabled ? '수집 중지' : !key.trusted ? '작업 영역 신뢰 필요' : null;
-    const collectors = message ? Object.fromEntries(['codex', 'claude'].map(id => [id, {message}])) : metadata.collectors;
+    const collectors = message ? Object.fromEntries(Object.keys(key.projection).map(id => [id, {message}])) : Object.fromEntries(Object.keys(key.projection).map(id => [id, metadata.collectors[collectorId(id)]]));
     const dark = key.colorMode === 'dark' || key.colorMode !== 'light' && [vscode.ColorThemeKind.Dark, vscode.ColorThemeKind.HighContrast].includes(key.theme);
     const p = preview(records, {projection: key.projection, creditBasis: key.creditBasis, forecastEnabled: key.forecastEnabled, dark, capacities: metadata.capacities, collectors, codexCreditDecimals: key.codexCreditDecimals, claudeUsdDecimals: key.claudeUsdDecimals, maxGap: Math.max(1800000, key.interval * 3000), staleAfterMs: Math.max(900000, key.interval * 3000)});
     const md = new vscode.MarkdownString('', true);
@@ -112,11 +122,11 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     const color = dark ? '#cbd5e1' : '#46546a';
     const title = `<svg xmlns="http://www.w3.org/2000/svg" width="332" height="24"><text x="0" y="22" fill="${color}" font-family="Segoe UI,sans-serif" font-size="13" font-weight="600">Usage Atlas · 최근 5시간</text></svg>`;
     md.appendMarkdown(`![Usage Atlas · 최근 5시간](data:image/svg+xml;base64,${Buffer.from(title).toString('base64')}) [$(gear)](command:usageAtlas.settings "Usage Atlas 설정")\n\n`);
-    md.appendMarkdown(`![Codex와 Claude Code 최근 5시간 사용률](data:image/svg+xml;base64,${Buffer.from(p.svg).toString('base64')})\n\n`);
+    md.appendMarkdown(`![AI 서비스별 최근 5시간 사용률](data:image/svg+xml;base64,${Buffer.from(p.svg).toString('base64')})\n\n`);
     md.appendMarkdown('<table width="360"><thead><tr><th width="100" align="left"></th><th width="130" align="right">5시간</th><th width="130" align="right">주간</th></tr></thead><tbody>');
     // 수집 중지·오류·기록 지연처럼 정상이 아닌 상태는 이름 아래에 함께 표시해 이전 값이 최신처럼 보이지 않게 한다.
     const escapeHtml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    for (const s of p.summaries) md.appendMarkdown(`<tr><td>${s.name}${s.status && s.status !== '정상' ? '<br/><small>' + escapeHtml(s.status) + '</small>' : ''}</td>${['five', 'week'].map(w => `<td align="right">${s[w] === '-' ? '-' : `${s[w]} (${s.resets[w]})${key.forecastEnabled ? '<br/>' + (s.forecasts?.[w]?.label || '예상') + ' ' + (s.forecasts?.[w]?.text || '-') : ''}`}</td>`).join('')}</tr>`);
+    for (const s of p.summaries) md.appendMarkdown(`<tr><td>${escapeHtml(s.name)}${s.status && s.status !== '정상' ? '<br/><small>' + escapeHtml(s.status) + '</small>' : ''}</td>${['five', 'week'].map(w => `<td align="right">${s[w] === '-' ? '-' : `${s[w]} (${s.resets[w]})${key.forecastEnabled ? '<br/>' + (s.forecasts?.[w]?.label || '예상') + ' ' + (s.forecasts?.[w]?.text || '-') : ''}`}</td>`).join('')}</tr>`);
     md.appendMarkdown('</tbody></table>\n\n');
     status.tooltip = md;
     status.accessibilityInformation = {label: `Usage Atlas. 최근 5시간 사용량. ${p.summaries.map(s => `${s.name}${s.status && s.status !== '정상' ? ' (' + s.status + ')' : ''} 5시간 ${s.five}, 주간 ${s.week}`).join('. ')}. 클릭하여 상세 차트 열기`};
@@ -154,6 +164,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         providers[id] = {windows: training, since};
         return forecasts.provider(windows, {...forecastOptions, since, archiveCells, learning});
       } : undefined);
+      if (antigravityAvailable && !Object.keys(data).some(providerCatalog.isAntigravity)) data.antigravity = {windows: {five: [], week: []}, ledger: [], ledgerAvailable: false};
       const key = crypto.createHash('sha256').update(JSON.stringify([forecastKey, patternBook.capacityKey, Object.values(providers).map(p=>Object.values(p.windows).map(w=>w.scopeKey))])).digest('hex');
       forecastInput = enabled && forecastOptions.patternDays > 0 ? {key, observedAt: records.at(-1)?.time || 0, providers, config: forecastOptions} : null;
       projectionCache = {records, capacities: metadata.capacities, gap, forecastKey, learned: learnedForecast, bookRevision: patternBook.revision, billingKey, conversion: currentConversion(), data};
@@ -163,10 +174,10 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   function payload() {
     const now = Date.now(), data = {}; let firstObserved = now;
     const projection = projected();
-    for (const id of ['codex', 'claude']) {
+    for (const id of Object.keys(projection)) {
       const p = projection[id], last = p.last;
       if (p.first !== undefined) firstObserved = Math.min(firstObserved, p.first);
-      data[id] = {...p, status: metadata.collectors[id]};
+      data[id] = {...p, status: metadata.collectors[collectorId(id)]};
 
     }
     return {type: 'data', now, firstObserved, data, creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: records.length};
@@ -194,7 +205,8 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   }
   function nextRead(id, last, snapshot) {
     const interval = effectiveInterval(id, last); let next = last + interval * 1000;
-    if (cfg().get('adaptiveCollection', true)) for (const value of Object.values(snapshot?.windows || {})) if (value?.reset > last) next = Math.min(next, Math.max(last + 5000, value.reset + 1000));
+    const values = id === 'antigravity' && snapshot?.provider ? records.filter(row => providerCatalog.isAntigravity(row.provider) && row.account === snapshot.account && row.time === snapshot.time).flatMap(row => Object.values(row.windows)) : Object.values(snapshot?.windows || {});
+    if (cfg().get('adaptiveCollection', true)) for (const value of values) if (value?.reset > last) next = Math.min(next, Math.max(last + 5000, value.reset + 1000));
     return {next, effectiveIntervalSeconds: interval};
   }
   async function loadAnalysis() {
@@ -281,9 +293,9 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     await refreshStored(); if (cfg().get('analysisEnabled', true)) await loadAnalysis(); await diagnostics.load();
     store.retentionDays = cfg().get('retentionDays');
     const scope = selection(message, records, store.retentionDays);
-    const report = await diagnostics.measure(scope.provider, 'details', async () => queryAnalysis({...scope, ...scope.filters, calls: cfg().get('analysisEnabled', true) ? analysisData.calls : [], records, capacities: metadata.capacities, coverage: analysisData.coverage?.[scope.provider] || {}, conversionModel: currentConversion(), exclusions: metadata.exclusions || [], diagnostics: diagnostics.snapshot(scope.provider), now: Date.now(), ...extra}, {signal}));
+    const report = await diagnostics.measure(scope.provider, 'details', async () => queryAnalysis({...scope, ...scope.filters, calls: cfg().get('analysisEnabled', true) ? analysisData.calls : [], records, capacities: metadata.capacities, coverage: analysisData.coverage?.[scope.provider] || {}, conversionModel: currentConversion(), exclusions: metadata.exclusions || [], diagnostics: diagnostics.snapshot(collectorId(scope.provider)), now: Date.now(), ...extra}, {signal}));
     report.selection = {...scope, time: scope.cursorTime}; report.storage = pending.status();
-    report.collection = {...metadata.collectors[scope.provider], baseIntervalSeconds: intervalSeconds(cfg().get('intervalSeconds')), adaptive: cfg().get('adaptiveCollection', true), connection: scope.provider === 'codex' ? cfg().get('codexConnectionMode', 'onDemand') : 'https-keep-alive'};
+    report.collection = {...metadata.collectors[collectorId(scope.provider)], baseIntervalSeconds: intervalSeconds(cfg().get('intervalSeconds')), adaptive: cfg().get('adaptiveCollection', true), connection: scope.provider === 'codex' ? cfg().get('codexConnectionMode', 'onDemand') : providerCatalog.isAntigravity(scope.provider) ? 'local-rpc' : 'https-keep-alive'};
     if (diagnostics.enabled) {
       const reference = require('./collection-cost.json').records.find(row => row.platform === process.platform);
       report.diagnostics = {...report.diagnostics, adapter: adapters.getDiagnostics?.(scope.provider) || null, reference: reference ? {measuredAt: reference.measuredAt, provider: scope.provider, values: reference[scope.provider], limitations: reference.limits} : null};
@@ -361,14 +373,14 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     if (running) return running;
     running = (async () => {
       await loadMeta();
-      if (!intervalChanged && ['codex', 'claude'].every(id => (metadata.collectors[id]?.next || 0) > Date.now())) return;
+      if (!intervalChanged && collectorIds().every(id => (metadata.collectors[id]?.next || 0) > Date.now())) return;
       return store.withLock(async () => {
         await loadMeta();
-        if (!await pending.ready(store)) {for (const id of ['codex', 'claude']) metadata.collectors[id] = {...metadata.collectors[id], message: pending.status().issue, next: Math.max(metadata.collectors[id]?.next || 0, Date.now() + 60000)}; await saveMeta(); return;}
+        if (!await pending.ready(store)) {for (const id of collectorIds()) metadata.collectors[id] = {...metadata.collectors[id], message: pending.status().issue, next: Math.max(metadata.collectors[id]?.next || 0, Date.now() + 60000)}; await saveMeta(); return;}
         records = await store.read();
         const additions = [];
         let changed = intervalChanged && retime(metadata.collectors, cfg().get('intervalSeconds'));
-        if (intervalChanged) for (const id of ['codex', 'claude']) {
+        if (intervalChanged) for (const id of collectorIds()) {
           const previous = metadata.collectors[id];
           if (!previous?.last || previous.errors || previous.message !== '정상') continue;
           const timing = nextRead(id, previous.last, latest(id));
@@ -376,15 +388,22 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
           Object.assign(previous, timing);
         }
         intervalChanged = false;
-        await Promise.all(['codex', 'claude'].map(async id => {
+        await Promise.all(collectorIds().map(async id => {
           const old = metadata.collectors[id] || {};
           if ((old.next || 0) > Date.now()) return;
           changed = true;
+          if (id === 'antigravity' && !cfg().get('antigravityEnabled', true)) {metadata.collectors[id] = {message: '수집 중지', next: Date.now() + 60000}; return;}
           if (id === 'claude' && !cfg().get('claudeCompatibilityApi')) {metadata.collectors[id] = {message: 'Claude 호환 조회 비활성', next: Date.now() + 300000}; return;}
           try {
             const options = {persistent: cfg().get('codexConnectionMode', 'onDemand') === 'persistent', cacheSeconds: cfg().get('adaptiveCollection', true) ? 5 : 0, idleTtlMs: Math.min(300000, effectiveInterval(id) * 1000 + 10000), metricsEnabled: cfg().get('diagnosticsEnabled', true)};
-            const s = await diagnostics.measure(id, 'query', async () => id === 'codex' ? adapters.codex(await executable(), controller.signal, options) : adapters.claude(cfg().get('claudeConfigDir'), controller.signal, options));
-            if (latest(id)?.time !== s.time || latest(id)?.account !== s.account) additions.push(s);
+            const values = await diagnostics.measure(id, 'query', async () => {
+              if (id === 'codex') return [await adapters.codex(await executable(), controller.signal, options)];
+              if (id === 'claude') return [await adapters.claude(cfg().get('claudeConfigDir'), controller.signal, options)];
+              const ext = vscode.extensions.getExtension('google.google-antigravity');
+              return antigravity.collect(cfg().get('antigravityDataDir'), controller.signal, {...options, ...(ext?.isActive && ext.exports?.port ? {connection: () => ext.exports} : {})});
+            });
+            for (const s of values) if (latest(s.provider)?.time !== s.time || latest(s.provider)?.account !== s.account) additions.push(s);
+            const s = {windows: Object.fromEntries(values.flatMap((value, i) => Object.entries(value.windows).map(([key, window]) => [i + key, window])))};
             const last = Date.now();
             metadata.collectors[id] = {last, ...nextRead(id, last, s), errors: 0, message: '정상'};
           } catch (e) {
@@ -399,7 +418,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         await diagnostics.save().catch(() => {});
       });
     })().catch(e => {
-      if (pending.status().issue) for (const id of ['codex', 'claude']) metadata.collectors[id] = {...metadata.collectors[id], message: pending.status().issue, next: Math.max(metadata.collectors[id]?.next || 0, Date.now() + 60000)};
+      if (pending.status().issue) for (const id of collectorIds()) metadata.collectors[id] = {...metadata.collectors[id], message: pending.status().issue, next: Math.max(metadata.collectors[id]?.next || 0, Date.now() + 60000)};
       output.appendLine(`저장 오류: ${e.message}`);
     }).finally(async () => {try {await loadMeta(); records = await store.read().catch(() => records); await publish();} finally {running = null;}});
     return running;
@@ -438,7 +457,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   }
   async function changeMeta(fn) {const r = await store.withLock(async () => {await loadMeta(); await fn(); projectionCache = null; await saveMeta(); return true;}); if (!r) vscode.window.showInformationMessage('수집 중입니다. 잠시 후 다시 시도하세요.'); await publish(); return Boolean(r);}
   async function selectWindow() {
-    const p = await vscode.window.showQuickPick([{label: 'Codex', id: 'codex'}, {label: 'Claude Code', id: 'claude'}], {title: '제공자'}); if (!p) return;
+    const p = await vscode.window.showQuickPick(providerCatalog.ids(records).map(id => ({label: providerCatalog.name(id, latest(id)?.label), id})), {title: '제공자'}); if (!p) return;
     if (!latest(p.id)) {vscode.window.showInformationMessage('먼저 실제 사용량을 수집해야 합니다.'); return;}
     const w = await vscode.window.showQuickPick([{label: '5시간', id: 'five'}, {label: '주간', id: 'week'}], {title: '사용량 창'}); return w ? {provider: p.id, window: w.id} : null;
   }
@@ -450,7 +469,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
       if (choice === '원본 저장소') await vscode.env.openExternal(vscode.Uri.parse('https://github.com/jisoq/Codexon'));
       if (choice === '라이선스') await vscode.window.showTextDocument(vscode.Uri.joinPath(context.extensionUri, 'licenses', 'Codexon-LICENSE.txt'), {preview: true});
     }    , refresh: async () => {await collect(); if (panel) await publish(); else output.show(true);}
-    , status: async () => {await loadMeta(); output.clear(); output.appendLine(`환경: ${vscode.env.remoteName || process.platform}\n저장소: ${store.dir}\n기록: ${records.length}`); for (const id of ['codex', 'claude']) {const s = latest(id); output.appendLine(`${id}: ${metadata.collectors[id]?.message || '대기'} · 최근 ${s ? new Date(s.time).toLocaleString() : '없음'} · ${s?.plan || '미확인'}\n  5시간 ${s?.windows.five?.used ?? '미제공'} / 주간 ${s?.windows.week?.used ?? '미제공'}`);} output.appendLine('Claude: 비공개 호환 API. 금액 단위가 확인된 지출만 표시. 금액 기준은 확인된 월 구독료·크레딧 구매 단가가 있을 때만 계산합니다.'); output.show(true);}
+    , status: async () => {await loadMeta(); output.clear(); output.appendLine(`환경: ${vscode.env.remoteName || process.platform}\n저장소: ${store.dir}\n기록: ${records.length}`); for (const id of providerCatalog.ids(records)) {const s = latest(id); output.appendLine(`${id}: ${metadata.collectors[collectorId(id)]?.message || '대기'} · 최근 ${s ? new Date(s.time).toLocaleString() : '없음'} · ${s?.plan || '미확인'}\n  5시간 ${s?.windows.five?.used ?? '미제공'} / 주간 ${s?.windows.week?.used ?? '미제공'}`);} output.appendLine('Claude: 비공개 호환 API. 금액 단위가 확인된 지출만 표시. 금액 기준은 확인된 월 구독료·크레딧 구매 단가가 있을 때만 계산합니다.'); output.show(true);}
     , capacity: async () => {const choice = await selectWindow(); if (!choice) return; const s = latest(choice.provider); const input = await vscode.window.showInputBox({title: '현재 요금제의 기본 용량 대비 배율', prompt: `${s.plan} · 같은 계정·요금제·창의 과거 기록에도 적용. 공식 용량 또는 확인한 값 입력`, placeHolder: '1 / 5 / 20', validateInput: v => Number(v) > 0 && Number(v) <= 100 ? null : '0 초과 100 이하'}); if (input === undefined) return; await changeMeta(() => {if (latest(choice.provider)?.account !== s.account || latest(choice.provider)?.plan !== s.plan) throw new Error('계정 또는 요금제가 바뀌었습니다. 다시 설정하세요.'); metadata.capacities = metadata.capacities.filter(c => !(c.provider === choice.provider && c.account === s.account && c.plan === s.plan && c.window === choice.window)); metadata.capacities.push({...choice, account: s.account, plan: s.plan, time: Date.now(), mult: Number(input)});});}
     , export: async () => {const uri = await vscode.window.showSaveDialog({defaultUri: vscode.Uri.file(path.join(os.homedir(), 'usage-atlas.json')), filters: {JSON: ['json']}}); if (!uri) return; await loadMeta(); await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify({version: 1, records: await store.read(), capacities: metadata.capacities, exclusions: metadata.exclusions || [], goals: metadata.goals}, null, 2)));}
     , import: async () => {
@@ -461,7 +480,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         if (doc.version !== 1 || !Array.isArray(doc.records) || doc.records.length > 120000) throw new Error('지원하지 않는 기록');
         const values = doc.records.map(sanitize);
         const caps = (Array.isArray(doc.capacities) ? doc.capacities : []).map(c => {
-          if (!['codex', 'claude'].includes(c.provider) || !['five', 'week'].includes(c.window) || !/^[a-f0-9]{20}$/.test(c.account) || typeof c.plan !== 'string' || c.plan.length > 100 || !Number.isFinite(c.time) || !Number.isFinite(c.mult) || c.mult <= 0 || c.mult > 100) throw new Error('잘못된 용량 배율 기록');
+          if (!providerCatalog.valid(c.provider) || !['five', 'week'].includes(c.window) || !/^[a-f0-9]{20}$/.test(c.account) || typeof c.plan !== 'string' || c.plan.length > 100 || !Number.isFinite(c.time) || !Number.isFinite(c.mult) || c.mult <= 0 || c.mult > 100) throw new Error('잘못된 용량 배율 기록');
           return {provider: c.provider, account: c.account, window: c.window, plan: c.plan, time: c.time, mult: c.mult};
         });
         const exclusions = validateExclusions(doc.exclusions || []);
@@ -491,14 +510,14 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   for (const [name, fn] of Object.entries(commands)) context.subscriptions.push(vscode.commands.registerCommand(`usageAtlas.${name}`, fn));
   context.subscriptions.push(vscode.window.registerUriHandler({handleUri: uri => uri.path === '/open' ? open() : undefined}));
   status.name = 'Usage Atlas'; status.text = '$(graph-line) Usage'; status.command = 'usageAtlas.open'; updateStatus(); status.show();
-  context.subscriptions.push(status, output, vscode.window.onDidChangeActiveColorTheme(() => publish()), vscode.workspace.onDidChangeConfiguration(e => {if (e.affectsConfiguration('usageAtlas')) {if (['intervalSeconds', 'adaptiveCollection', 'idleIntervalMultiplier', 'analysisEnabled'].some(key => e.affectsConfiguration(`usageAtlas.${key}`))) intervalChanged = true; diagnostics.setEnabled(cfg().get('diagnosticsEnabled', true)); if (e.affectsConfiguration('usageAtlas.codexConnectionMode')) adapters.dispose(); schedule(0); publish();}}));
+  context.subscriptions.push(status, output, vscode.window.onDidChangeActiveColorTheme(() => publish()), vscode.workspace.onDidChangeConfiguration(async e => {if (e.affectsConfiguration('usageAtlas')) {if (['antigravityDataDir', 'antigravityEnabled'].some(key => e.affectsConfiguration('usageAtlas.' + key))) {await detectAntigravity(); antigravity.dispose(); projectionCache = null; const old = metadata.collectors.antigravity; if (old && !old.errors) old.next = Date.now();}if (['intervalSeconds', 'adaptiveCollection', 'idleIntervalMultiplier', 'analysisEnabled'].some(key => e.affectsConfiguration(`usageAtlas.${key}`))) intervalChanged = true; diagnostics.setEnabled(cfg().get('diagnosticsEnabled', true)); if (e.affectsConfiguration('usageAtlas.codexConnectionMode')) adapters.dispose(); schedule(0); publish();}}));
   // 한 창만 수집, 다른 창은 동일 저장소의 결과를 읽는다. UI는 숨기면 해제된다.
-  const tick = async version => {try {await collect();} finally {if (!disposed && version === timerVersion) {updateStatus(); schedule(wakeDelay(metadata.collectors, Date.now(), cfg().get('enabled') && vscode.workspace.isTrusted));}}};
+  const tick = async version => {try {await collect();} finally {if (!disposed && version === timerVersion) {updateStatus(); schedule(wakeDelay(metadata.collectors, Date.now(), cfg().get('enabled') && vscode.workspace.isTrusted, collectorIds()));}}};
   function schedule(delay) {clearTimeout(timer); const version = ++timerVersion; timer = setTimeout(() => tick(version).catch(e => {if (!disposed) output.appendLine(e.message);}), delay);}
   schedule(Math.min(5000, intervalSeconds(cfg().get('intervalSeconds')) * 1000));
   const maintenanceTick = async () => {try {await maintainAnalysis(); await maintainForecast();} finally {if (!disposed) maintenanceTimer = setTimeout(maintenanceTick, 15000);}};
   maintenanceTimer = setTimeout(maintenanceTick, 7000);
-  stop = () => {disposed = true; clearTimeout(timer); clearTimeout(maintenanceTimer); detailSerial++; detailController?.abort(); closeConversations(); controller.abort(); adapters.dispose(); sessionIndex.dispose?.(); projectionCache = null; panel?.dispose();};
+  stop = () => {disposed = true; clearTimeout(timer); clearTimeout(maintenanceTimer); detailSerial++; detailController?.abort(); closeConversations(); controller.abort(); adapters.dispose(); antigravity.dispose(); sessionIndex.dispose?.(); projectionCache = null; panel?.dispose();};
   context.subscriptions.push({dispose: stop});
   return {snapshot: () => payload(), refresh: collect, storagePath: store.dir, isUiReady: () => uiReady, forecastLearningStatus: () => ({model: learnedForecast, patternCells: [...patternBook.scopes.values()].reduce((sum,g)=>sum+g.cells.size,0)}), maintainForecast, details: detailReport, conversation: conversationReport, closeConversations, conversationStatus: () => ({sources: conversationReader.states.length}), maintainAnalysis, analysisSnapshot: () => analysisData, pendingStatus: () => pending.status()};
 }

@@ -290,10 +290,13 @@ exports.run = async () => {
     const forecastSnapshot = api.snapshot(); assert.equal(forecastSnapshot.data.codex.forecast.five.state, 'predicted');
     assert.equal(await frame.locator('[data-forecast-trend]').count(), 4);
     await workbench.mouse.move(10, 10); await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover();
-    const forecastHover = workbench.locator('.monaco-hover').filter({has: workbench.locator('img[alt="Codex와 Claude Code 최근 5시간 사용률"]')});
-    await forecastHover.waitFor({state: 'visible'});
+    const forecastHover = workbench.locator('.monaco-hover').filter({has: workbench.locator('img[alt="AI 서비스별 최근 5시간 사용률"]')});
+    try {await forecastHover.waitFor({state: 'visible', timeout: 8000});} catch (error) {
+      await workbench.screenshot({path: path.join(root, 'screenshots/native-hover-failure.png')});
+      await fs.writeFile(path.join(root, 'test-native-hover-debug.json'), JSON.stringify(await workbench.evaluate(() => ({hovers: [...document.querySelectorAll('.monaco-hover')].map(n => n.outerHTML), status: [...document.querySelectorAll('.statusbar-item')].filter(n => n.textContent.includes('Usage')).map(n => n.outerHTML), imgs: [...document.querySelectorAll('img')].map(n => ({alt: n.alt, src: n.src.slice(0, 90)}))})), null, 2)); throw error;
+    }
     assert.match(await forecastHover.textContent(), /사용 가능 ≈/); assert.equal(await forecastHover.locator('tbody tr').count(), 2);
-    const forecastImage = forecastHover.locator('img[alt="Codex와 Claude Code 최근 5시간 사용률"]'); await forecastImage.evaluate(n => n.decode());
+    const forecastImage = forecastHover.locator('img[alt="AI 서비스별 최근 5시간 사용률"]'); await forecastImage.evaluate(n => n.decode());
     assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360); assert.equal(await forecastImage.evaluate(n => n.naturalHeight), 192);
     await forecastHover.screenshot({path: path.join(root, 'screenshots/forecast-preview-native.png')});
     result.forecast = {pageMarkers: 4, trendPaths: 4, previewRemainingTime: true, previewRows: 2, imageWidth: 360, imageHeight: 192};
@@ -361,6 +364,29 @@ exports.run = async () => {
     await workbench.mouse.move(10, 10); await cfg.update('forecastEnabled', false, vscode.ConfigurationTarget.Global);
     await frame.waitForFunction(() => document.querySelectorAll('[data-forecast]').length === 0);
     assert.equal(api.snapshot().data.codex.forecast, undefined); assert.equal(await frame.locator('[data-forecast-trend]').count(), 0); result.forecast.settingOff = true;
+    await cfg.update('enabled', false, vscode.ConfigurationTarget.Global);
+    const agNow = Date.now(), ag = require('../src/antigravity.cjs');
+    const agRows = [-60000, 0].flatMap(offset => ag.snapshots({response: {groups: [{displayName: 'Gemini Models', buckets: [
+        {bucketId: 'gemini-5h', window: '5h', remainingFraction: .8 + (offset ? .01 : 0), resetTime: new Date(agNow + 3600000).toISOString()}
+      , {bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: .6 + (offset ? .01 : 0), resetTime: new Date(agNow + 86400000).toISOString()}
+    ]}]}}, {account: hash('native-google'), plan: 'g1-pro-tier'}, agNow + offset));
+    await new Store(api.storagePath).withLock(() => new Store(api.storagePath).commit(agRows));
+    await vscode.commands.executeCommand('usageAtlas.open');
+    const agId = agRows[0].provider;
+    await frame.waitForFunction(id => !!document.getElementById('ua-' + id), agId);
+    await frame.locator('#ua-' + agId).click();
+    await frame.waitForFunction(id => document.getElementById('usage-atlas').dataset.focusedProvider === id, agId);
+    assert.ok(await frame.locator('[data-series="' + agId + '-week"]').count());
+    await frame.locator('[data-details-line="' + agId + '-week"]').first().focus(); await workbench.keyboard.press('Enter');
+    await frame.waitForFunction(() => document.getElementById('ua-panel-report').textContent.includes('사용률 관측'));
+    assert.ok(await frame.locator('#ua-panel-report').textContent().then(text => text.includes('호출·토큰·대화')));
+    assert.equal(await frame.locator('#ua-details-filters').isVisible(), false);
+    await frame.locator('#ua-details-close').click();
+    await workbench.mouse.move(10, 10); await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible'});
+    assert.match(await forecastHover.textContent(), /Antigravity.*Gemini/); assert.equal(await forecastHover.locator('tbody tr').count(), 3);
+    await forecastImage.evaluate(n => n.decode()); assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360);
+    await forecastHover.screenshot({path: path.join(root, 'screenshots/antigravity-preview-native.png')});
+    result.antigravity = {nativeCspWebview: true, focus: true, previewRows: 3, independentWindows: true, providerRequests: 0};
     assert.equal(calls, 0, 'opening, graph details, settings and local indexing never request providers');
     result.providerRequests = calls; result.status = 'PASS';
   } catch (error) {result.status = 'FAIL'; result.error = error.stack; throw error;}

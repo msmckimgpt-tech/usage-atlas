@@ -25,7 +25,7 @@ async function harness(t, options = {}) {
   const vscode = {
     ConfigurationTarget: {Global: 1, Workspace: 2, WorkspaceFolder: 3},
     workspace: {getConfiguration: () => cfg, isTrusted: true, onDidChangeConfiguration: fn => {changes.push(fn); return disposable();}}
-    , env: {}, extensions: {getExtension: () => null}, StatusBarAlignment: {Right: 1}, ViewColumn: {Active: 1}, ColorThemeKind: {Dark: 2, HighContrast: 3}
+    , env: {}, extensions: {getExtension: id => id === 'google.google-antigravity' && options.antigravity ? {isActive: true, exports: {port: 12345, csrfToken: 'fixture-token-1234567890'}} : null}, StatusBarAlignment: {Right: 1}, ViewColumn: {Active: 1}, ColorThemeKind: {Dark: 2, HighContrast: 3}
     , Uri: {joinPath: (uri, ...parts) => ({toString: () => path.join(uri.fsPath, ...parts)})}
     , MarkdownString: class {constructor() {this.value = ""; markdowns.push(this);} appendMarkdown(value) {this.value += value; return this;}}
     , commands: {registerCommand: (name, fn) => {commands.set(name, fn); return disposable();}, executeCommand: async () => {}}
@@ -41,7 +41,7 @@ async function harness(t, options = {}) {
   };
   class Store {constructor() {this.dir = dir;} async read() {return records;} async withLock(fn) {return fn();} async commit(additions) {records = [...records, ...additions].sort((a, b) => a.time - b.time); return records;}}
   const localRequire = createRequire(path.join(root, 'src', 'extension.cjs'));
-  const requireMock = name => name === 'vscode' ? vscode : name === './core.cjs' ? {...core, Store} : name === './adapters.cjs' ? adapters : name === './hover.cjs' ? {preview: (records, options) => {previewOptions.push(options); return optionsHarness.realPreview ? localRequire('./hover.cjs').preview(records, options) : {svg: '<svg/>', summaries: []};}} : localRequire(name);
+  const requireMock = name => name === 'vscode' ? vscode : name === './core.cjs' ? {...core, Store} : name === './adapters.cjs' ? adapters : name === './antigravity.cjs' && options.antigravity ? {dataDir: value => value, dispose() {}, collect: async (...args) => {calls.push('antigravity'); return options.antigravity(...args);}} : name === './hover.cjs' ? {preview: (records, options) => {previewOptions.push(options); return optionsHarness.realPreview ? localRequire('./hover.cjs').preview(records, options) : {svg: '<svg/>', summaries: []};}} : localRequire(name);
   const mod = {exports: {}};
   vm.runInNewContext(`(function(require,module,exports){${await fs.readFile(path.join(root, 'src', 'extension.cjs'), 'utf8')}\n})`, {AbortController, process, Buffer, setTimeout: () => 1, clearTimeout() {}})(requireMock, mod, mod.exports);
   const api = await mod.exports.activate({globalStorageUri: {fsPath: dir}, extensionUri: {fsPath: root}, extensionPath: root, extension: {id: 'local-tools.usage-atlas', packageJSON: require('../package.json')}, subscriptions: []});
@@ -341,4 +341,20 @@ test('data updated while hidden reaches the resumed view without resetting its r
   await panel.receive({type: 'ready', revision: panel.messages.at(-1).revision});
   assert.equal(panel.messages.length, count + 1, 'returning refreshes the clock even at the same data revision');
   assert.equal(panel.messages.at(-1).resetView, undefined); assert.equal(h.calls.length, 0);
+});
+
+
+test('Antigravity joins the configured collection schedule atomically and both views without starting Codex or Claude', async t => {
+  const now = Date.now(), quota = {response: {groups: [{displayName: 'Gemini Models', buckets: [{bucketId: 'gemini-weekly', window: 'weekly', remainingFraction: .6, resetTime: new Date(now + 86400000).toISOString()}]}]}};
+  const values = require('../src/antigravity.cjs').snapshots(quota, {account: core.hash('google-fixture'), plan: 'g1-pro-tier'}, now);
+  const h = await harness(t, {settings: {intervalSeconds: 60}, metadata: {collectors: Object.fromEntries(['codex', 'claude'].map(id => [id, {last: now, next: now + 3600000, backoffUntil: now + 3600000, message: 'fixture'}]))}, antigravity: async (_dir, _signal, options) => {assert.equal(options.connection().port, 12345); return values;}});
+  await h.open(); const before = h.bootstrap(h.panels[0]); assert.ok(before.data.antigravity); assert.equal(h.calls.length, 0);
+  await h.api.refresh(); assert.deepEqual(h.calls, ['antigravity']);
+  const after = h.api.snapshot(), id = values[0].provider;
+  assert.equal(after.data.antigravity, undefined); assert.equal(after.data[id].last.windows.week.used, 40);
+  assert.equal(after.data[id].status.message, '정상'); assert.equal(after.data[id].status.effectiveIntervalSeconds, 60);
+  assert.ok(h.previewOptions.at(-1).projection[id]);
+  h.settings.antigravityEnabled = false;
+  for (const change of h.changes) await change({affectsConfiguration: section => section === 'usageAtlas' || section === 'usageAtlas.antigravityEnabled'});
+  await h.api.refresh(); assert.deepEqual(h.calls, ['antigravity']); assert.equal(h.api.snapshot().data[id].status.message, '수집 중지');
 });

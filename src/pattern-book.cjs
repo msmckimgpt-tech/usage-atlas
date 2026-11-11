@@ -2,6 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const catalog = require('../media/provider-focus.js');
 const quarter = 900000, day = 86400000, maxBytes = 8 * 1024 * 1024, maxCells = 150000;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const digest = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -50,7 +51,7 @@ class PatternBook {
       if (data.version !== 1 || !/^[a-f\d]{64}$/.test(data.capacityKey) || !Array.isArray(data.scopes) || data.scopes.length > 4096 || !Array.isArray(data.cells) || data.cells.length > maxCells) throw new Error('format');
       const scopes = new Map(), keys = [];
       for (const scope of data.scopes) {
-        if (!scope || !['codex', 'claude'].includes(scope.provider) || !['five', 'week'].includes(scope.window) || !/^[a-f\d]{20}$/.test(scope.account) || !/^[a-f\d]{64}$/.test(scope.capKey || '') || typeof scope.plan !== 'string' || scope.plan.length > 100 || scope.mult !== null && (!finite(scope.mult) || scope.mult <= 0)) throw new Error('scope');
+        if (!scope || !catalog.valid(scope.provider) || !['five', 'week'].includes(scope.window) || !/^[a-f\d]{20}$/.test(scope.account) || !/^[a-f\d]{64}$/.test(scope.capKey || '') || typeof scope.plan !== 'string' || scope.plan.length > 100 || scope.mult !== null && (!finite(scope.mult) || scope.mult <= 0)) throw new Error('scope');
         const key = JSON.stringify(scope); if (scopes.has(key)) throw new Error('duplicate'); keys.push(key); scopes.set(key, {scope, cells: new Map()});
       }
       for (const row of data.cells) {

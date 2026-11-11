@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const validProvider = value => ['codex', 'claude', 'shared'].includes(value);
+const validProvider = value => ['codex', 'claude', 'antigravity', 'shared'].includes(value);
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const round = value => Math.round(value * 1000) / 1000;
 class Diagnostics {

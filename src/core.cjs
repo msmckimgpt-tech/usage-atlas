@@ -2,7 +2,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const providers = ['codex', 'claude'];
+const catalog = require('../media/provider-focus.js');
 const recordLimit = 50000, compactionMargin = 256, fileLimit = 32 * 1024 * 1024;
 const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 20);
 const number = x => typeof x === 'number' && Number.isFinite(x);
@@ -30,7 +30,7 @@ function claudeSnapshot(data, identity, plan, now = Date.now()) {
   return {v: 1, provider: 'claude', account: hash(identity), time: now, plan, windows: {five: windowValue(data.five_hour?.utilization, data.five_hour?.resets_at), week: windowValue(data.seven_day?.utilization, data.seven_day?.resets_at)}, source: 'claude-compatibility', spentUsd: usd ?? extraUsd, spendPeriod: new Date(now).toISOString().slice(0, 7)};
 }
 function validSnapshot(s) {
-  if (!s || s.v !== 1 || !providers.includes(s.provider) || !/^[a-f0-9]{20}$/.test(s.account) || !number(s.time) || s.time < 0 || s.time > Date.now() + 300000 || typeof s.plan !== 'string' || s.plan.length > 100 || !s.windows) return false;
+  if (!s || s.v !== 1 || !catalog.valid(s.provider) || !/^[a-f0-9]{20}$/.test(s.account) || !number(s.time) || s.time < 0 || s.time > Date.now() + 300000 || typeof s.plan !== 'string' || s.plan.length > 100 || !s.windows) return false;
   for (const key of ['five', 'week']) {
     const w = s.windows[key];
     if (w !== null && (!w || !number(w.used) || w.used < 0 || w.used > 100 || !number(w.reset))) return false;
@@ -39,10 +39,11 @@ function validSnapshot(s) {
 }
 function sanitize(s) {
   if (!validSnapshot(s)) throw new Error('기록 형식이 올바르지 않습니다');
-  const out = {v: 1, provider: s.provider, account: s.account, time: s.time, plan: s.plan, source: ['app-server', 'claude-compatibility'].includes(s.source) ? s.source : 'import', windows: {}};
+  const out = {v: 1, provider: s.provider, account: s.account, time: s.time, plan: s.plan, source: ['app-server', 'claude-compatibility', 'antigravity-local'].includes(s.source) ? s.source : 'import', windows: {}};
   for (const key of ['five', 'week']) out.windows[key] = s.windows[key] ? {used: s.windows[key].used, reset: s.windows[key].reset} : null;
   for (const key of ['spentUsd', 'creditBalance']) if (number(s[key]) && s[key] >= 0) out[key] = s[key];
   if (/^\d{4}-\d{2}$/.test(s.spendPeriod)) out.spendPeriod = s.spendPeriod;
+  if (catalog.isAntigravity(s.provider) && typeof s.label === 'string' && s.label.length <= 80 && !/[\x00-\x1f]/.test(s.label)) out.label = s.label;
   return out;
 }
 function series(records, provider, key, capacities = [], maxGap = 1800000) {
@@ -133,7 +134,7 @@ function ledgerSeries(list, provider, maxGap) {
   return {unit, points, available: points.some(p => p.amount !== null), total: amount};
 }
 function project(records, capacities = [], maxGap = 1800000, enrich, forecast) {
-  return Object.fromEntries(providers.map(id => {
+  return Object.fromEntries(catalog.ids(records).map(id => {
     const mine = currentRecords(records, id), ledger = ledgerSeries(mine, id, maxGap);
     const transitions = Object.fromEntries(['five', 'week'].map(w => [w, windowTransitions(mine, w)]));
     const credit = creditValues(mine, ledger.points, transitions.week);

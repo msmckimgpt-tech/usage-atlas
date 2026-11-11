@@ -1,12 +1,12 @@
 # Usage Atlas
 
-Codex와 Claude Code의 구독 사용량·추가 크레딧·소진 예측을 한 화면에서 확인하는 VS Code 확장입니다. Windows와 WSL에서 동작합니다. OpenAI 및 Anthropic의 공식 제품이 아닌 독립 확장입니다.
+Codex·Claude Code·Antigravity의 구독 사용량·소진 예측과 확인 가능한 추가 크레딧을 한 화면에서 확인하는 VS Code 확장입니다. Windows와 WSL에서 동작합니다. OpenAI·Anthropic·Google의 공식 제품이 아닌 독립 확장입니다.
 
 [다운로드](https://github.com/msmckimgpt-tech/usage-atlas/releases) · [문제 제보](https://github.com/msmckimgpt-tech/usage-atlas/issues) · [개인정보 처리](PRIVACY.md) · [배포 안내](docs/RELEASING.md)
 
 ## 기능
 
-- 두 제공자의 5시간·주간 사용률을 동시에 표시하며 모델 집중 보기와 겹쳐 보기를 지원합니다.
+- 서비스·한도 그룹별 5시간·주간 사용률을 동시에 표시하며 모델 집중 보기와 겹쳐 보기를 지원합니다.
 - 사용률·변화량·누적 보기, 현재 한도·기본 용량 비교, 초기화 선·마커를 지원합니다.
 - 추가 크레딧을 구독 관측 환산 또는 공식 월 구독료 대비 금액 비율로 비교합니다.
 - 최근 평균과 요일·시간대별 패턴으로 구독 100% 도달을 예측합니다. 표본이 충분하면 비감소 소비량 제약을 적용한 과거 오차 범위를 함께 표시합니다.
@@ -25,7 +25,7 @@ Codex와 Claude Code의 구독 사용량·추가 크레딧·소진 예측을 한
 CLI로 설치할 수도 있습니다. 파일명은 내려받은 버전에 맞춥니다.
 
 ~~~sh
-code --install-extension ./usage-atlas-0.2.23.vsix
+code --install-extension ./usage-atlas-0.3.0.vsix
 ~~~
 
 기존 로컬 설치와 같은 확장 ID인 local-tools.usage-atlas를 유지합니다. Marketplace 등록은 아직 완료되지 않았으며, 현재 배포 채널은 GitHub Releases입니다.
@@ -36,6 +36,7 @@ WSL을 사용한다면 **Remote - WSL 창에 연결한 상태**에서 같은 VSI
 
 - Codex: 공식 확장 **Codex - OpenAI’s coding agent**의 설치된 실행 파일과 기존 로그인을 우선 사용합니다. 필요하면 Usage Atlas 설정에서 Codex 실행 파일 경로를 지정합니다.
 - Claude: 기존 Claude Code 로그인을 참조합니다. 사용량 호환 API는 공개된 고정 계약이 아니며 제공자 변경·제한에 영향을 받을 수 있습니다. 설정에서 이 조회를 끌 수 있습니다.
+- Antigravity: 설치된 **Google Antigravity** 확장의 로컬 연결을 우선 사용합니다. Gemini·Claude/GPT·Argon 등 실제 한도 그룹을 별도로 표시합니다. 같은 그룹의 모델 한도를 더하지 않으며 주간만 제공되는 그룹의 5시간 값은 -입니다. 조회는 기존 수집 간격을 따르며 별도 CLI나 상주 프로세스를 시작하지 않습니다. 설정에서 수집을 끄거나 네이티브 런타임 데이터 경로를 지정할 수 있습니다. WSL은 해당 Linux 사용자의 공식 확장/런타임이 필요하며 Windows 계정·연결을 자동으로 가져오지 않습니다. 로컬 호환 RPC는 공식 공개 계약이 아니므로 변경 시 조회를 보류합니다.
 - 별도 API 키나 비밀번호를 Usage Atlas에 입력하지 않습니다. 계정 상태나 요금제가 제공하지 않는 지표는 -로 표시합니다.
 
 명령 팔레트의 **Usage Atlas: 설정**은 VS Code 기본 설정창으로 연결됩니다. 수집·보관, 차트·표시, 소진 예측, 제공자 연결, 분석·진단 순서로 묶여 있습니다.
@@ -45,6 +46,8 @@ WSL을 사용한다면 **Remote - WSL 창에 연결한 상태**에서 같은 VSI
 ## 차트와 해석
 
 사용률은 현재 구독 주기의 0~100%를 뜻하고, 기본 용량 비교에서는 설정 배율에 따라 500%·2000% 등으로 표시할 수 있습니다. 변화량은 실제 연속 관측 사이의 증가분이고, 누적은 확인된 소비를 기간에 걸쳐 더한 값입니다. 차트 누락 구간의 추정 연결은 저장된 원본이나 소비량 합계를 수정하지 않습니다.
+
+Antigravity 추가 크레딧 소비·구매 단가·호출/대화는 현재 검증한 조회 응답으로 확인할 수 없어 표시·환산하지 않습니다. 구독 그래프와 초기화·예측은 다른 서비스와 같은 규칙을 적용합니다. [공식 한도 구조](https://antigravity.google/docs/cli/commands/usage/)와 [요금제](https://antigravity.google/docs/plans)를 참조하세요.
 
 **추가 크레딧 → 구독**은 같은 계정·요금제의 구독 관측과 공식 호출 요율을 근거로 자동 환산한 추정값입니다. 제공되지 않는 5시간 사용률을 주간 사용률로 대체하지 않습니다. 속도 모드가 기록되지 않은 경우 Standard로 추정하며 불명확한 근거는 보류합니다.
 

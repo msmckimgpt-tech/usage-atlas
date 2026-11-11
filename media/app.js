@@ -22,7 +22,7 @@
     for (const key of ['credit', 'refs']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
     if (Array.isArray(saved.range) && saved.range.length === 2 && saved.range.every(Number.isFinite) && saved.range[0] < saved.range[1]) state.range = [...saved.range];
   }
-  state.focusedProvider = providerFocus.restore(ids, saved);
+  state.focusedProvider = providerFocus.restore([...ids, ...(providerFocus.isAntigravity(saved?.focusedProvider) || saved?.focusedProvider === 'antigravity' ? [saved.focusedProvider] : [])], saved);
   state.creditBasis = ['subscription', 'billing'].includes(model.creditBasis) ? model.creditBasis : defaults.creditBasis;
   let basisPending = null;
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
@@ -113,6 +113,7 @@
       const unit = creditUnit(id), total = creditAt(id, model.now);
       const summary = !creditAvailable(id) || !number(total) ? '-' : unit === 'credits' ? `관측 감소 ${creditNumber(total, id)} 크레딧${number(last?.creditBalance) ? ' · 잔액 ' + creditNumber(last.creditBalance, id) : ''}` : `관측 지출 $${creditNumber(total, id)}`;
       const pending = state.credit && !canEstimate(id);
+      if (providerFocus.isAntigravity(id) || id === 'antigravity') {el(id + '-credit').textContent = state.credit ? '-' : ''; el(id + '-credit').title = '추가 크레딧 소비 자료 없음'; el(id).dataset.creditState = state.credit ? 'unavailable' : 'off'; continue;}
       const conversion = state.creditBasis === 'billing' ? (pending ? '금액 기준 · 가격 미확인' : '공식 월 기본 구독료 대비 지출 비율') : pending ? `자동 환산 대기 · ${!creditAvailable(id) ? '원단위 기록 없음' : state.mode === 'usage' && !number(total) ? '주간 기준 미확인' : '관측 근거 부족'} · 합산 대기` : state.creditMode === 'estimate' ? '사용률에 추정 합산' : '크레딧·금액 ' + ({usage: '주간 사용', delta: '변화량', total: '전체 누적'}[state.mode]);
       el(id).dataset.creditState = !state.credit ? 'off' : pending ? 'pending' : displayCreditMode() === 'estimate' ? 'estimated' : 'native';
       el(id + '-credit').textContent = !state.credit ? '' : pending ? (state.creditMode === 'money' ? summary + ' · 환산 대기' : conversion) : state.creditMode === 'estimate' ? '추정 합산 · ' + summary : summary;
@@ -125,7 +126,30 @@
   }
   const quota = (id, w) => chartGraphs.quota(model.data[id], id, w, {...state, credit: state.credit && state.creditBasis !== 'billing'});
 
+  function syncProviders() {
+    const extra = Object.keys(model.data).filter(id => providerFocus.isAntigravity(id) || id === 'antigravity');
+    ids.splice(0, ids.length, 'codex', 'claude', ...extra);
+    providerKeys.splice(0, providerKeys.length, ...[...ids].sort((a, b) => b.length - a.length));
+    for (const node of root.querySelectorAll('[data-antigravity]')) if (!ids.includes(node.dataset.antigravity)) node.remove();
+    for (const id of extra) {
+      const label = model.data[id]?.last?.label;
+      names[id] = providerFocus.name(id, label);
+      colors[id] = 'light-dark(' + providerFocus.color(id, false) + ',' + providerFocus.color(id, true) + ')';
+      let button = el(id);
+      if (!button) {
+        button = el('codex').cloneNode(true); button.id = 'ua-' + id; button.dataset.antigravity = id;
+        button.querySelector('strong').textContent = names[id];
+        button.querySelector('.ua-dot').className = 'ua-dot ua-dot-antigravity';
+        for (const node of button.querySelectorAll('[id]')) node.id = node.id.replace('codex', id);
+        for (const window of ['five', 'week']) button.querySelector('[data-legend-cell="codex-' + window + '"]').dataset.legendCell = id + '-' + window;
+        root.querySelector('.ua-providers').append(button); bindProvider(id);
+      }
+      button.querySelector('strong').textContent = names[id]; button.style.setProperty('--c', colors[id]);
+    }
+    root.querySelector('.ua-providers').dataset.expanded = String(extra.length > 0);
+  }
   function sync() {
+    syncProviders();
     for (const k of ['mode', 'basis']) el(k).value = state[k];
     for (const k of ['credit', 'refs']) el(k).checked = state[k];
     const visible = providerFocus.visible(ids, state.focusedProvider);
@@ -568,11 +592,12 @@
   for (const key of ['credit', 'refs']) el(key).addEventListener('change', () => {state[key] = el(key).checked; save(); requestDraw();});
   for (const basis of ['subscription', 'billing']) el('credit-' + basis).addEventListener('change', event => {if (!event.target.checked) return; state.creditBasis = basis; basisPending = basis; save(); api.postMessage({type: 'creditBasis', value: basis}); requestDraw();});
   el('credit-mode').addEventListener('change', () => {state.creditMode = el('credit-mode').value; save(); requestDraw();});
-  for (const id of ids) {
+  function bindProvider(id) {
     el(id).addEventListener('click', () => {state.focusedProvider = providerFocus.toggle(ids, state.focusedProvider, id); hoveredProvider = null; save(); requestDraw();});
     for (const event of ['pointerenter', 'focus']) el(id).addEventListener(event, () => {hoveredProvider = id; emphasize(id);});
     for (const event of ['pointerleave', 'blur']) el(id).addEventListener(event, () => {hoveredProvider = null; emphasize(null);});
   }
+  for (const id of ids) bindProvider(id);
   el('settings').addEventListener('click', () => command('settings'));
   const chart = el('chart');
   chart.addEventListener('pointerdown', e => {

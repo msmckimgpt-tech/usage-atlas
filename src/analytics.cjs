@@ -3,6 +3,7 @@
 // Copyright (c) 2026 jisoq; design adapted from https://github.com/jisoq/Codexon.
 // See licenses/Codexon-LICENSE.txt. Usage Atlas implementation is independently written.
 
+const providerCatalog = require('../media/provider-focus.js');
 const {quotaData, matchCalls} = require('./quota-match.cjs');
 const {priceCall, catalog} = require('./pricing.cjs');
 const {buildConversion, callConverter, validConversion, scopeKey} = require('./credit-conversion.cjs');
@@ -468,7 +469,15 @@ function estimate(rows, intervals, sourceCallCount, eligibleCallCount, includePl
 
 // Host calls this pure entry point only when the graph-click modal requests data.
 function analyze(options = {}) {
-  return buildReport(options);
+  const report = buildReport(options);
+  if (providerCatalog.isAntigravity(options.provider)) {
+    report.quotaOnly = true;
+    const {provider, account = report.summary.account, window = 'week', records = []} = options;
+    const rows = records.filter(row => row.provider === provider && row.account === account && row.time >= report.summary.start && row.time < report.summary.end && row.windows?.[window]);
+    report.observations = {items: rows.slice().sort((a, b) => b.time - a.time).slice(0, 100).map(row => ({time: row.time, used: row.windows[window].used, reset: row.windows[window].reset})), totalCount: rows.length, limit: 100, truncated: rows.length > 100};
+    for (const target of [report.summary, report.coverage]) for (const key of Object.keys(target)) if (/^callCount$|CallCount$|^(?:input|cached|output|cacheRatio|sessionCount|requestCount|costUsd|knownCostUsd)$/.test(key)) target[key] = null;
+  }
+  return report;
 }
 
 module.exports = {analyze};
@@ -487,11 +496,12 @@ function buildReport(options) {
   } = options;
   const notes = ['호출 수의 분모는 선택 기간에서 색인된 로컬 호출입니다. 아직 읽지 못했거나 해석할 수 없는 원본의 전체 호출 수를 의미하지 않습니다.'];
   if (coverage.partial || coverage.limited || coverage.cacheWriteFailed || coverage.malformedLines > 0 || coverage.oversizedLines > 0 || coverage.unavailableFiles > 0) notes.push('수집 공백·해석 실패·제한된 원본이 있어 전체 원본 호출 수와 완전한 비율은 확인할 수 없습니다.');
+  if (providerCatalog.isAntigravity(provider)) notes.push('Antigravity는 그룹별 한도 관측만 제공합니다. 호출·토큰·대화 및 추가 크레딧 소비는 확인할 수 없습니다.');
   const clock = finite(now) ? now : Date.now();
   const cursorTime = finite(options.cursorTime) ? options.cursorTime : finite(options.time) ? options.time : clock;
   const end = finite(options.end) ? options.end : cursorTime + 1;
   const start = finite(options.start) ? options.start : end - (window === 'five' ? 18000000 : 604800000);
-  const validRange = start < end && ['five', 'week'].includes(window) && ['codex', 'claude'].includes(provider);
+  const validRange = start < end && ['five', 'week'].includes(window) && providerCatalog.valid(provider);
   if (!validRange) notes.push('지원하지 않는 공급자·사용률 창 또는 잘못된 시간 범위입니다.');
   const providerRecords = records.filter(row => row?.provider === provider && finite(row.time) && row.time <= cursorTime).sort((a, b) => a.time - b.time);
   const identities = [...new Set(calls.filter(row => row?.provider === provider && row.account != null).map(row => row.account))];

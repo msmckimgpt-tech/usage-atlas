@@ -8,8 +8,7 @@ const chartGraphs = require('../media/chart-series.js');
 const forecasts = require('../media/forecast.js');
 const {converter} = require('./credit-conversion.cjs');
 const billing = require('./billing.cjs');
-const providers = ['codex', 'claude'];
-const names = {codex: 'Codex', claude: 'Claude Code'};
+const providerCatalog = require('../media/provider-focus.js');
 const duration = 5 * 3600000;
 const clock = new Intl.DateTimeFormat('ko-KR', {hour: '2-digit', minute: '2-digit', hour12: false});
 const date = new Intl.DateTimeFormat('ko-KR', {month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false});
@@ -30,12 +29,14 @@ function resetRemaining(reset, now) {
   return `${Math.floor(Math.min(1439, minutes) / 60)}h ${Math.min(1439, minutes) % 60}m`;
 }
 function preview(records, {now = Date.now(), dark = false, capacities = [], collectors = {}, maxGap = 1800000, staleAfterMs = 900000, codexCreditDecimals = 4, claudeUsdDecimals = 4, projection, conversion = null, forecastEnabled = true, creditBasis = 'subscription'} = {}) {
-  const start = now - duration, width = 360, height = 192, right = width - 10, top = 28;
+  const start = now - duration, width = 360, right = width - 10;
   // SVG 이미지 생성은 DOM 없이 수행하므로 11px 글자 폭을 보수적으로 계산한다.
   const measure = text => [...text].reduce((sum, char) => sum + (char.charCodeAt(0) > 127 ? 11 : char === ' ' ? 3.5 : 7), 0);
   const history = records.filter(r => r.time <= now);
   const convert = converter(conversion), bill = billing.enricher();
   const projected = projection || project(history, capacities, maxGap, (...args) => {convert(...args); bill(...args);});
+  const providers = Object.keys(projected), names = Object.fromEntries(providers.map(id => [id, providerCatalog.name(id, projected[id]?.last?.label)]));
+  const legendRows = providers.length > 2 ? providers.length : 1, top = 28 + (legendRows - 1) * 16, height = 192 + (legendRows - 1) * 16;
   const quotas = providers.flatMap(id => ['five', 'week'].flatMap(w => chartGraphs.quota(projected[id], id, w))).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const credits = providers.flatMap(id => creditGraphs.series(projected[id], id, {creditBasis})).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const allSeries = [...quotas, ...credits].map(s => ({...s, bridges: gaps.bridges(s.points, 'y')}));
@@ -46,6 +47,7 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
   const axis = timeAxis.layout([start, now], right - left, measure);
   const dateRows = Math.max(1, ...axis.dates.map(tick => tick.row + 1)), bottom = height - 38 - (dateRows - 1) * 14;
   const palette = dark ? {text: '#cbd5e1', grid: '#3a414c', codex: '#62d0d8', claude: '#eeb18c'} : {text: '#46546a', grid: '#d3dae3', codex: '#087a86', claude: '#b05428'};
+  for (const id of providers) palette[id] = providerCatalog.color(id, dark);
   const x = time => left + (time - start) / duration * (right - left);
   const y = value => bottom - value / maximum * (bottom - top);
   const feeMaximum = chartGraphs.billingMaximum(allSeries, [start, now]);
@@ -61,7 +63,7 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
     if (path) parts.push(`<path clip-path="url(#plot)" data-interpolated="${key}" d="${path}" stroke="${color}" stroke-width=".75" stroke-dasharray="3 4" opacity=".5"/>`);
   };
   for (const value of ticks) {parts.push(`<line x1="${left}" x2="${right}" y1="${y(value)}" y2="${y(value)}" stroke="${palette.grid}"/>`); text(percent(value), left - 5, y(value) + 4, 'end', ' data-y-label=""');}
-  for (const [i, id] of providers.entries()) {const px = left + i * 155; parts.push(id === 'codex' ? `<circle cx="${px + 4}" cy="12" r="3" fill="${palette[id]}"/>` : `<path d="M${px + 4} 8l4 4-4 4-4-4Z" style="fill:${palette[id]}"/>`); text(names[id], px + 13, 16);}
+  for (const [i, id] of providers.entries()) {const px = providers.length > 2 ? left : left + i * 155, py = providers.length > 2 ? i * 16 : 0; parts.push(id === 'codex' ? `<circle cx="${px + 4}" cy="${12 + py}" r="3" fill="${palette[id]}"/>` : `<path d="M${px + 4} ${8 + py}l4 4-4 4-4-4Z" style="fill:${palette[id]}"/>`); text(names[id], px + 13, 16 + py);}
   if (creditBasis === 'billing') {text('금액 %', right, top - 5, 'end', ' data-billing-axis=""'); for (const value of [0, feeMaximum / 2, feeMaximum]) text(percent(value), right - 2, by(value) + 4, 'end', ' data-billing-tick=""');}
   const summaries = []; let visible = 0;
   for (const id of providers) {

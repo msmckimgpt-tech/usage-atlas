@@ -2,9 +2,9 @@
 // Adaptive collection adapted from https://github.com/jisoq/Codexon; Copyright (c) 2026 jisoq.
 // See licenses/Codexon-LICENSE.txt. Usage Atlas preserves user intervals and server backoff.
 function intervalSeconds(value) {return typeof value === 'number' && Number.isFinite(value) ? Math.max(1, Math.min(3600, value)) : 300;}
-function wakeDelay(collectors, now = Date.now(), enabled = true) {
+function wakeDelay(collectors, now = Date.now(), enabled = true, ids = ['codex', 'claude']) {
   if (!enabled) return 60000;
-  const next = Math.min(...['codex', 'claude'].map(id => collectors[id]?.next || now));
+  const next = Math.min(...ids.map(id => collectors[id]?.next || now));
   return Math.max(25, Math.min(60000, next - now));
 }
 function retime(collectors, interval) {

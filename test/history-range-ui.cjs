@@ -11,7 +11,7 @@ const records = ['codex', 'claude'].flatMap(provider => Array.from({length: 121}
   return {v: 1, provider, account: hash(provider), plan: 'fixture', time, windows: {five: {used: i % 100, reset: time + 18000000}, week: {used: i % 100, reset: time + week}}};
 }));
 const data = project(records), initial = {type: 'data', data, now, firstObserved: now - 120 * day, colorMode: 'dark', count: records.length, chartHistoryDays: 30};
-const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.savedState=null;window.acquireVsCodeApi=()=>({getState:()=>null,setState:v=>window.savedState=structuredClone(v),postMessage:()=>{}});</script><script type="application/json" id="ua-initial-data">' + JSON.stringify(initial).replace(/</g, '\\u003c') + '</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'].map(name => '<script>' + read(name) + '</script>').join('') + '</body></html>';
+const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.savedState=null;window.acquireVsCodeApi=()=>({getState:()=>null,setState:v=>window.savedState=structuredClone(v),postMessage:()=>{}});</script><script type="application/json" id="ua-initial-data">' + JSON.stringify(initial).replace(/</g, '\\u003c') + '</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(name => '<script>' + read(name) + '</script>').join('') + '</body></html>';
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const result = {status: 'RUNNING', cases: [], errors: []};
@@ -50,7 +50,7 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
       const document = html.replace('getState:()=>null', () => 'getState:()=>(' + escaped(state) + ')').replace(escaped(initial), () => escaped(model));
       await page.goto('about:blank'); await page.setContent(document); await painted();
     };
-    for (const version of [3, 4, 5]) {
+    for (const version of [3, 4, 5, 6]) {
       await restore({...saved, version});
       assert.deepEqual((await range()).slice(0, 2), selected);
       assert.equal(await page.locator('#ua-mode').inputValue(), 'total'); assert.equal(await page.locator('#ua-basis').inputValue(), 'base');
@@ -58,7 +58,7 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
       await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       assert.deepEqual(await page.evaluate(() => window.savedState.range), selected);
     }
-    result.cases.push('destroy/recreate restores absolute range and preferences from state versions 3/4/5; new data and pagehide preserve it');
+    result.cases.push('destroy/recreate restores absolute range and preferences from state versions 3/4/5/6; new data and pagehide preserve it');
     for (const invalid of [null, [], [now], [now, now], [now, now - day], ['1', '2'], [null, now], [now - day, now, now + day]]) {
       await restore({...saved, range: invalid}); await expectRange(30);
       assert.equal(await page.locator('#ua-chart').evaluate(node => /NaN|Infinity/.test(node.innerHTML)), false);

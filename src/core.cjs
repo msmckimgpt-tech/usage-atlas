@@ -2,7 +2,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const catalog = require('../media/provider-focus.js');
+const catalog = require('../media/provider-visibility.js');
 const recordLimit = 50000, compactionMargin = 256, fileLimit = 32 * 1024 * 1024;
 const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 20);
 const number = x => typeof x === 'number' && Number.isFinite(x);

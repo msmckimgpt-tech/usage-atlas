@@ -23,7 +23,7 @@ function fixture() {
   }
   return {type: 'data', now, theme: 1, colorMode: 'system', tooltipTransparency: 14, data: Object.fromEntries(Object.entries(estimatedFixture(project(records, capacities))).map(([id, p]) => [id, {...p, status: {message: '정상'}}]))};
 }
-const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:s=>{window.saved=s;window.saves=(window.saves||0)+1;},postMessage:m=>{window.sent=m;}});</script><script>${read('d3.min.js')}</script><script>${read('gaps.js')}</script><script>${read('time-axis.js')}</script><script>${read('amount-format.js')}</script><script>${read('credit-series.js')}</script><script>${read('chart-series.js')}</script><script>${read('forecast.js')}</script><script>${read('provider-focus.js')}</script><script>${read('app.js')}</script></body></html>`;
+const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:s=>{window.saved=s;window.saves=(window.saves||0)+1;},postMessage:m=>{window.sent=m;}});</script><script>${read('d3.min.js')}</script><script>${read('gaps.js')}</script><script>${read('time-axis.js')}</script><script>${read('amount-format.js')}</script><script>${read('credit-series.js')}</script><script>${read('chart-series.js')}</script><script>${read('forecast.js')}</script><script>${read('provider-visibility.js')}</script><script>${read('app.js')}</script></body></html>`;
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const report = {widths: [], errors: [], status: 'RUNNING'};
@@ -190,7 +190,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     const modeCaps=['five','week'].map(window=>({provider:'codex',account:hash('codex'),plan:'modes',window,time:now,mult:5}));
     const modes={...fixture(),data:project(modeRows,modeCaps)};estimatedFixture(modes.data);
     await page.evaluate(data => (window.uiModel=data,window.dispatchEvent(new MessageEvent('message',{data}))),modes);
-    await page.locator('#ua-codex').click(); await page.locator('#ua-credit').check();
+    await page.locator('#ua-claude').click(); await page.locator('#ua-credit').check();
     for(const mode of ['usage','delta','total']) {
       await page.locator('#ua-mode').selectOption(mode); await page.locator('#ua-credit-mode').selectOption('money'); await page.waitForTimeout(30);
       const native=await page.locator('[data-series="codex-credit"]').last().evaluate(n=>n.__data__?.at(-1)?.amount);
@@ -207,7 +207,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     assert.ok(Math.abs(extrema[0]-40)<.001 && Math.abs(extrema[1]-50)<.001,'credit axis uses visible interpolation boundaries, not lifetime zero: '+JSON.stringify(extrema));
     await setPreference('tooltipTransparency',60);assert.match(await page.locator('#ua-tooltip').evaluate(n=>getComputedStyle(n).backgroundColor),/0\.4/);
     await setPreference('tooltipTransparency',14);
-    await page.locator('#ua-navigator').dblclick(); await page.locator('#ua-codex').click();await page.locator('#ua-credit').uncheck();
+    await page.locator('#ua-navigator').dblclick(); await page.locator('#ua-claude').click();await page.locator('#ua-credit').uncheck();
     await page.locator('#ua-mode').selectOption('usage');
     report.creditModes='PASS: weekly reset, exact delta, lifetime total, shared native/conversion values, visible min/max with boundary interpolation, tooltip transparency settings';
     const gapRows=[];
@@ -293,7 +293,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     await page.locator('#ua-mode').selectOption('usage');await page.waitForTimeout(40);
     await page.screenshot({path:path.join(dir,'screenshots','cycle-ends-light.png')});
     await setPreference('colorMode','dark');await page.screenshot({path:path.join(dir,'screenshots','cycle-ends-dark.png')});await setPreference('colorMode','system');
-    await page.locator('#ua-codex').click();await page.waitForTimeout(40);assert.equal(await page.locator('[data-cycle-end^="claude-"]').count(),0);await page.locator('#ua-codex').click();
+    await page.locator('#ua-claude').click();await page.waitForTimeout(40);assert.equal(await page.locator('[data-cycle-end^="claude-"]').count(),0);await page.locator('#ua-claude').click();
     const noCycle={...fixture(),data:project(cycleRows.filter(r=>r.time===now))};
     await page.evaluate(data=>(window.uiModel=data,window.dispatchEvent(new MessageEvent('message',{data}))),noCycle);await page.waitForTimeout(40);
     assert.equal(await page.locator('[data-cycle-end]').count(),0,'active latest endpoints are not completed cycles');
@@ -302,7 +302,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     assert.equal(await page.locator('#ua-tooltip').getAttribute('data-detail'),'marker');
     assert.match(await page.locator('#ua-tooltip').textContent(),/관측|다음 초기화/);
     await page.locator('#ua-navigator').dblclick();
-    report.cycleEnds='PASS: both providers/windows, scheduled and early cycle endpoints, all modes, true pre-reset observations, active-cycle exclusion, provider focus and hairline strokes';
+    report.cycleEnds='PASS: both providers/windows, scheduled and early cycle endpoints, all modes, true pre-reset observations, active-cycle exclusion, independent provider visibility and hairline strokes';
     const resetRows=[];
     for(const provider of ['codex','claude']) for(let i=0;i<4;i++) resetRows.push({v:1,provider,account:hash(provider),plan:'reset',time:now-(3-i)*60000,windows:{five:null,week:{used:[90,100,1,3][i],reset:i<2?now+3*86400000:now+week}},...(provider==='codex'?{creditBalance:1000-i*10}:{spentUsd:i/10,spendPeriod:'2026-10'})});
     const resetData={...fixture(),data:project(resetRows,['codex','claude'].map(provider=>({provider,account:hash(provider),plan:'reset',window:'week',time:now,mult:5})))};estimatedFixture(resetData.data);
@@ -374,7 +374,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     const observed = [49, 60, 82, 82, 84].map((used, i) => ({v: 1, provider: 'codex', account: hash('codex'), plan: 'test', time: first + i * 100000, windows: {five: null, week: {used, reset: now + week}}}));
     cumulative.data.codex = {...project(observed, [{provider: 'codex', account: hash('codex'), plan: 'test', window: 'week', mult: 5, time: first + 300000}]).codex};
     await page.evaluate(data => (window.uiModel=data,window.dispatchEvent(new MessageEvent('message', {data}))), cumulative);
-    await page.locator('#ua-codex').click(); await page.locator('#ua-mode').selectOption('total'); await page.waitForTimeout(40);
+    await page.locator('#ua-claude').click(); await page.locator('#ua-mode').selectOption('total'); await page.waitForTimeout(40);
     assert.match(await page.locator('#ua-chart .ua-axis').textContent(), /관측 누적 %/);
     assert.deepEqual(await page.locator('[data-series="codex-week"]').evaluate(n => n.__data__.map(p => p.y)), [0, 11, 33, 33, 35], 'calibration never erases historical cumulative growth');
     await page.locator('#ua-credit').check(); await page.locator('#ua-credit-mode').selectOption('estimate'); await page.waitForTimeout(40);
@@ -385,7 +385,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     assert.equal(await page.locator('[data-series="codex-week"]').evaluate(n => n.__data__.at(-1).y), 175);
     cumulative.data.claude.windows = {five: [], week: series(observed.map(r => ({...r, provider: 'claude', account: hash('claude')})), 'claude', 'week', [{provider: 'claude', account: hash('claude'), plan: 'test', window: 'week', mult: 5, time: first}])};
     await page.evaluate(data => (window.uiModel=data,window.dispatchEvent(new MessageEvent('message', {data}))), cumulative);
-    await page.locator('#ua-basis').selectOption('current'); await page.locator('#ua-codex').click(); await page.waitForTimeout(40);
+    await page.locator('#ua-basis').selectOption('current'); await page.locator('#ua-claude').click(); await page.waitForTimeout(40);
     assert.equal(await page.locator('[data-series="codex-week"]').evaluate(n => n.__data__.at(-1).y), 35, 'retroactive same-plan calibration uses current capacity');
     assert.equal(await page.locator('[data-series="claude-week"]').evaluate(n => n.__data__.at(-1).y), 35, 'fully calibrated total uses current capacity');
     await page.locator('#ua-basis').selectOption('base'); await page.waitForTimeout(40);
@@ -538,7 +538,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     await page.setViewportSize({width: 1440, height: 900}); await page.waitForTimeout(40);
     await page.locator('#ua-navigator').dblclick(); await page.waitForTimeout(30); await checkDefault();
     report.navigator = 'PASS: default ±7d, chart synchronization, pan, both handles, bounds, keyboard, reopen, double-click';
-    await page.locator('#ua-claude').click(); await page.waitForTimeout(30); assert.equal(await page.locator('[data-series^="codex"]').count(), 0); await page.locator('#ua-claude').click();
+    await page.locator('#ua-codex').click(); await page.waitForTimeout(30); assert.equal(await page.locator('[data-series^="codex"]').count(), 0); await page.locator('#ua-codex').click();
     await setPreference('colorMode','dark'); await page.waitForTimeout(30); assert.equal(await page.locator('#usage-atlas').evaluate(n => getComputedStyle(n).backgroundColor), 'rgb(26, 29, 35)');
     fs.mkdirSync(path.join(dir, 'screenshots'), {recursive: true});
     await page.screenshot({path: path.join(dir, 'screenshots', 'wide-dark.png')});

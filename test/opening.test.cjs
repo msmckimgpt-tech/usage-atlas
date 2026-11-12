@@ -358,3 +358,21 @@ test('Antigravity joins the configured collection schedule atomically and both v
   for (const change of h.changes) await change({affectsConfiguration: section => section === 'usageAtlas' || section === 'usageAtlas.antigravityEnabled'});
   await h.api.refresh(); assert.deepEqual(h.calls, ['antigravity']); assert.equal(h.api.snapshot().data[id].status.message, '수집 중지');
 });
+
+
+test('display settings update both views immediately without changing collected history or querying providers', async t => {
+  const h = await harness(t, {realPreview: true}); await h.open(); const panel = h.panels[0], initial = h.bootstrap(panel);
+  await panel.receive({type: 'ready', revision: initial.revision});
+  const before = h.api.snapshot(); assert.equal(before.visibility.showCodex, true);
+  const apply = async key => {for (const change of h.changes) await change({affectsConfiguration: section => section === 'usageAtlas' || section === 'usageAtlas.' + key});};
+  h.settings['display.codex'] = false; await apply('display.codex');
+  assert.equal(h.api.snapshot().visibility.showCodex, false); assert.equal(panel.messages.at(-1).visibility.showCodex, false);
+  assert.equal(h.previewOptions.at(-1).visibility.showCodex, false);
+  const rendered = require('../src/hover.cjs').preview([], {projection: h.previewOptions.at(-1).projection, visibility: h.previewOptions.at(-1).visibility});
+  assert.deepEqual(rendered.summaries.map(row => row.name), ['Claude Code']);
+  assert.deepEqual(h.api.snapshot().data, before.data); assert.equal(h.api.snapshot().count, before.count);
+  h.settings['display.claude'] = false; await apply('display.claude');
+  assert.deepEqual(require('../src/hover.cjs').preview([], h.previewOptions.at(-1)).summaries, []);
+  h.settings['display.codex'] = true; await apply('display.codex');
+  assert.equal(h.api.snapshot().visibility.showCodex, true); assert.equal(h.calls.length, 0);
+});

@@ -5,7 +5,7 @@ const {chromium, browserOptions} = require('./browser.cjs');
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, 'media', file), 'utf8');
 const at = (month, day, hour = 0, year = 2026) => +new Date(year, month - 1, day, hour);
-const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}})</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
+const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}})</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const report = {status: 'RUNNING', cases: [], errors: []};

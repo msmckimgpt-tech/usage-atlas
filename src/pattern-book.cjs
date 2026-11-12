@@ -2,7 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const catalog = require('../media/provider-focus.js');
+const catalog = require('../media/provider-visibility.js');
 const quarter = 900000, day = 86400000, maxBytes = 8 * 1024 * 1024, maxCells = 150000;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const digest = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');

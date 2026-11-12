@@ -20,7 +20,7 @@ const projection = project(records, capacities, undefined, (provider, mine, wind
     p.creditEstimate = {nativeUsage: Number.isFinite(p.credit.usage) ? p.credit.usage * factor : null, nativeUsageContinuous: p.credit.usageContinuous};
   }
 });
-const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'].map(file => '<script>' + read(file) + '</script>').join('') + '</body></html>';
+const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(file => '<script>' + read(file) + '</script>').join('') + '</body></html>';
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const report = {status: 'RUNNING', cases: [], errors: []};

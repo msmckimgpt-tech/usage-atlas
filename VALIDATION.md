@@ -1,3 +1,13 @@
+# 0.3.1 — 표시 설정과 그래프 다중 선택 (2026-11-12)
+
+- VS Code 기본 설정의 서비스·모델 표시 범주(order 25)에 display.codex, display.claude, display.antigravity, display.antigravityGemini, display.antigravityClaudeGpt, display.antigravityArgon 체크박스를 추가했습니다. 기본값은 모두 표시이며 기존 설정의 키·값·범주를 변경하지 않습니다.
+- 서비스 스위치를 우선 적용하고 Antigravity 그룹 스위치를 적용합니다. 현재 검증한 그룹의 안정적인 ID와 호환 이름을 사용하며 새 그룹은 기본 표시합니다. 설정은 페이지의 목록/그래프와 상태 미리보기에 공통으로 반영합니다. 수집·보관·원본 데이터와 계정·요금제 처리에는 관여하지 않습니다.
+- Webview state v6의 hiddenProviders는 모델별 독립 선택을 보관합니다. 전체 OFF도 유효하며 한 모델을 켜도 다른 모델을 복구하지 않습니다. v3/v4/v5 상태는 기존 표시와 모드·시간 범위를 보존하여 이전합니다. 설정 숨김/복구 후에도 로컬 ON/OFF를 유지합니다.
+- provider-focus 모듈과 집중 보기의 런타임/접근성 문구를 제거하고 provider-visibility 공통 모듈로 교체했습니다. 숨겨진 Codex 버튼을 복제해 새 모델 카드를 만들 때 hidden 속성을 초기화하고, 한 항목만 남으면 목록 폭을 채웁니다.
+- 단위 검수는 임의 개수의 모델 선택·전체 OFF·상태 이전·서비스/모델 우선순위·설정 스키마·페이지/미리보기 즉시 반영·추가 제공자 조회 없음·기록 보존을 확인합니다. visibility-ui는 5모델 조합·키보드·숨김/복구·Webview 재생성·범위 보존·전체 OFF·좁은 화면을 검수합니다.
+- 실제 VS Code 호스트 검수는 네이티브 설정 갱신에 따라 페이지와 미리보기 항목이 함께 변경되고 원본 데이터가 유지되는지 합성 자료로 확인합니다. 필수 배포 게이트에 visibility-ui를 추가하여 17단계로 구성합니다.
+- 기본 설정 체크박스와 범주/순서는 VS Code 공식 contribution-points 문서를 확인했습니다: https://code.visualstudio.com/api/references/contribution-points#contributes.configuration
+
 # 0.3.0 — Antigravity 통합 (2026-11-11)
 
 - 설치된 Google Antigravity 1.11.0의 기존 로그인과 로컬 런타임에서 GetUserStatus 및 RetrieveUserQuotaSummary 읽기 요청의 실제 200 응답을 검증했습니다. Gemini·Claude/GPT는 5시간/주간, Argon은 주간 창을 제공했습니다. 모델별 quotaInfo의 단일 창을 임의로 5시간·주간에 배정하지 않습니다.

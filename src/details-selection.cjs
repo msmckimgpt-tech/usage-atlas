@@ -1,7 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const {series} = require('./core.cjs');
-const catalog = require('../media/provider-focus.js');
+const catalog = require('../media/provider-visibility.js');
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const windows = ['five', 'week'];
 function selection(message, records, retentionDays = 90, now = Date.now()) {

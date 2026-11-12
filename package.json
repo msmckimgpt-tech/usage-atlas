@@ -2,7 +2,7 @@
   "name": "usage-atlas"
 , "displayName": "Usage Atlas"
 , "description": "Codex, Claude Code, Antigravity 사용량 기록과 계획"
-, "version": "0.3.0"
+, "version": "0.3.1"
 , "publisher": "local-tools"
 , "license": "SEE LICENSE IN LICENSE"
 , "engines": {
@@ -192,6 +192,49 @@
           , "default": "subscription"
           , "description": "페이지와 미리보기의 추가 크레딧 환산 기준. 금액 100%는 월 구독료만큼의 추가 지출이며 한도 소진이 아닙니다."
           , "order": 80
+          }
+        }
+      }
+    , {
+        "id": "usageAtlas.display"
+      , "title": "서비스·모델 표시"
+      , "order": 25
+      , "properties": {
+          "usageAtlas.display.codex": {
+            "type": "boolean"
+          , "default": true
+          , "description": "Codex 표시 — 상단 목록과 미리보기에 표시합니다. 숨겨도 기록 수집은 계속됩니다."
+          , "order": 10
+          }
+        , "usageAtlas.display.claude": {
+            "type": "boolean"
+          , "default": true
+          , "description": "Claude Code 표시 — 상단 목록과 미리보기에 표시합니다. 숨겨도 기록 수집은 계속됩니다."
+          , "order": 20
+          }
+        , "usageAtlas.display.antigravity": {
+            "type": "boolean"
+          , "default": true
+          , "description": "Antigravity 표시 — 상단 목록과 미리보기에 표시합니다. 숨겨도 기록 수집은 계속됩니다."
+          , "order": 30
+          }
+        , "usageAtlas.display.antigravityGemini": {
+            "type": "boolean"
+          , "default": true
+          , "description": "Antigravity · Gemini 표시 — 상단 목록과 미리보기에 표시합니다. 숨겨도 기록 수집은 계속됩니다."
+          , "order": 40
+          }
+        , "usageAtlas.display.antigravityClaudeGpt": {
+            "type": "boolean"
+          , "default": true
+          , "description": "Antigravity · Claude/GPT 표시 — 상단 목록과 미리보기에 표시합니다. 숨겨도 기록 수집은 계속됩니다."
+          , "order": 50
+          }
+        , "usageAtlas.display.antigravityArgon": {
+            "type": "boolean"
+          , "default": true
+          , "description": "Antigravity · Argon 표시 — 상단 목록과 미리보기에 표시합니다. 숨겨도 기록 수집은 계속됩니다."
+          , "order": 60
           }
         }
       }

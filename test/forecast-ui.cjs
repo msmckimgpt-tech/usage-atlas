@@ -13,7 +13,7 @@ const records = ['codex', 'claude'].flatMap(provider => Array.from({length: 61},
 const capacities = ['five', 'week'].map(window => ({provider: 'codex', account: hash('codex'), plan: 'fixture', window, time: records[0].time, mult: 5}));
 const calculate = source => project(source, capacities, undefined, converter(null), (_id, _mine, windows) => forecast.provider(windows));
 const data = calculate(records), model = {type: 'data', data, now, count: records.length, colorMode: 'dark', forecastEnabled: true};
-const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.openedDetails=[];window.usageAtlasDetails=()=>({open:value=>window.openedDetails.push(value),isOpen:()=>false});window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'].map(file => '<script>' + read(file) + '</script>').join('') + '</body></html>';
+const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.openedDetails=[];window.usageAtlasDetails=()=>({open:value=>window.openedDetails.push(value),isOpen:()=>false});window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(file => '<script>' + read(file) + '</script>').join('') + '</body></html>';
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const report = {status: 'RUNNING', cases: [], errors: []};
@@ -66,14 +66,14 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
       }
     }
     report.cases.push('usage/delta/total, current/base and native/additive credits preserve deadlines and positions');
-    await page.locator('#ua-codex').click(); await page.waitForFunction(() => document.querySelectorAll('[data-forecast-trend]').length === 2);
+    await page.locator('#ua-claude').click(); await page.waitForFunction(() => document.querySelectorAll('[data-forecast-trend]').length === 2);
     assert.equal(await page.locator('[data-forecast-trend^="claude-"]').count(), 0); assert.equal(await page.locator('#ua-codex').getAttribute('aria-pressed'), 'true');
-    await page.locator('#ua-codex').click(); await page.waitForFunction(() => document.querySelectorAll('[data-forecast-trend]').length === 4);
+    await page.locator('#ua-claude').click(); await page.waitForFunction(() => document.querySelectorAll('[data-forecast-trend]').length === 4);
     await page.locator('#ua-mode').selectOption('usage'); await page.locator('#ua-basis').selectOption('base');
     const expanded = project(records, capacities.map(c => ({...c, mult: 20})), undefined, converter(null), (_id, _mine, windows) => forecast.provider(windows));
     await update({data: expanded}); assert.equal(+(await page.locator('#ua-chart').getAttribute('data-y-max')), 2160);
     assert.equal(+(await page.locator('[data-forecast-trend="codex-five"]').getAttribute('data-end-value')), 2000);
-    report.cases.push('model focus and x20 base capacity endpoints update correctly with visible forecast axis expansion');
+    report.cases.push('independent model visibility and x20 base capacity endpoints update correctly with visible forecast axis expansion');
     const mini = preview(records, {now, projection: data, capacities});
     assert.equal(mini.start, now - 5 * 3600000); assert.equal(mini.end, now); assert.doesNotMatch(mini.svg, /data-forecast/);
     assert.equal(mini.svg, preview(records, {now, projection: data, capacities, forecastEnabled: false}).svg);

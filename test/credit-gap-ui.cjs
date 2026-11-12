@@ -14,7 +14,7 @@ const root = path.resolve(__dirname, '..');
   const input = fixture(), model = buildConversion(input), before = JSON.stringify(input);
   const projected = project(input.records, input.capacities, undefined, converter(model));
   const media = file => fs.readFile(path.join(root, 'media', file), 'utf8');
-  const scripts = ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'];
+  const scripts = ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'];
   const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + await media('style.css') + '</style></head><body>' + await media('body.html') + '<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>' + (await Promise.all(scripts.map(async file => '<script>' + await media(file) + '</script>'))).join('') + '</body></html>';
   const result = {status: 'RUNNING', cases: [], errors: [], providerRequests: 0, sourceWrites: 0};
   const browser = await chromium.launch(browserOptions);

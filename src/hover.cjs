@@ -8,7 +8,7 @@ const chartGraphs = require('../media/chart-series.js');
 const forecasts = require('../media/forecast.js');
 const {converter} = require('./credit-conversion.cjs');
 const billing = require('./billing.cjs');
-const providerCatalog = require('../media/provider-focus.js');
+const providerCatalog = require('../media/provider-visibility.js');
 const duration = 5 * 3600000;
 const clock = new Intl.DateTimeFormat('ko-KR', {hour: '2-digit', minute: '2-digit', hour12: false});
 const date = new Intl.DateTimeFormat('ko-KR', {month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false});
@@ -28,14 +28,14 @@ function resetRemaining(reset, now) {
   if (reset - now >= 86400000) {const hours = Math.floor((reset - now) / 3600000); return `${Math.floor(hours / 24)}d ${hours % 24}h`;}
   return `${Math.floor(Math.min(1439, minutes) / 60)}h ${Math.min(1439, minutes) % 60}m`;
 }
-function preview(records, {now = Date.now(), dark = false, capacities = [], collectors = {}, maxGap = 1800000, staleAfterMs = 900000, codexCreditDecimals = 4, claudeUsdDecimals = 4, projection, conversion = null, forecastEnabled = true, creditBasis = 'subscription'} = {}) {
+function preview(records, {now = Date.now(), dark = false, capacities = [], collectors = {}, maxGap = 1800000, staleAfterMs = 900000, codexCreditDecimals = 4, claudeUsdDecimals = 4, projection, visibility = {}, conversion = null, forecastEnabled = true, creditBasis = 'subscription'} = {}) {
   const start = now - duration, width = 360, right = width - 10;
   // SVG 이미지 생성은 DOM 없이 수행하므로 11px 글자 폭을 보수적으로 계산한다.
   const measure = text => [...text].reduce((sum, char) => sum + (char.charCodeAt(0) > 127 ? 11 : char === ' ' ? 3.5 : 7), 0);
   const history = records.filter(r => r.time <= now);
   const convert = converter(conversion), bill = billing.enricher();
   const projected = projection || project(history, capacities, maxGap, (...args) => {convert(...args); bill(...args);});
-  const providers = Object.keys(projected), names = Object.fromEntries(providers.map(id => [id, providerCatalog.name(id, projected[id]?.last?.label)]));
+  const providers = Object.keys(projected).filter(id => providerCatalog.enabled(id, projected[id], visibility)), names = Object.fromEntries(providers.map(id => [id, providerCatalog.name(id, projected[id]?.last?.label)]));
   const legendRows = providers.length > 2 ? providers.length : 1, top = 28 + (legendRows - 1) * 16, height = 192 + (legendRows - 1) * 16;
   const quotas = providers.flatMap(id => ['five', 'week'].flatMap(w => chartGraphs.quota(projected[id], id, w))).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const credits = providers.flatMap(id => creditGraphs.series(projected[id], id, {creditBasis})).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));

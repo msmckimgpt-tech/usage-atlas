@@ -3,7 +3,7 @@
 // Copyright (c) 2026 jisoq; design adapted from https://github.com/jisoq/Codexon.
 // See licenses/Codexon-LICENSE.txt. Usage Atlas implementation is independently written.
 
-const providerCatalog = require('../media/provider-focus.js');
+const providerCatalog = require('../media/provider-visibility.js');
 const {quotaData, matchCalls} = require('./quota-match.cjs');
 const {priceCall, catalog} = require('./pricing.cjs');
 const {buildConversion, callConverter, validConversion, scopeKey} = require('./credit-conversion.cjs');

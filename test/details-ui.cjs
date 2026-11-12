@@ -29,7 +29,7 @@ const report = {
   , diagnostics: {enabled: true, summary: {samples: 3, lastMs: 8, meanMs: 9, p95Ms: 10, cpuMs: 4, rssMiB: 50, heapMiB: 10}, note: 'Usage Atlas 확장 호스트 프로세스 측정입니다.', events: [{time: now, stage: 'query', elapsedMs: 8, cpuMs: 4, rssMiB: 50, outcome: 'success'}]}
   , provenance: {catalogVersion: 'test-1', priceVerifiedAt: '2026-10-22', sources: [{title: '공식 가격표', url: 'https://example.test/pricing'}], notes: ['API 환산 추정액입니다.']}
 };
-const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.messages=[];window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:value=>window.messages.push(value)});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'details.js', 'provider-focus.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
+const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.messages=[];window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:value=>window.messages.push(value)});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'details.js', 'provider-visibility.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const errors = [], passed = [];

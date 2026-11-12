@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '..');
   const convert = converter(buildConversion(input)), bill = billing.enricher();
   const data = project(input.records, input.capacities, undefined, (...args) => {convert(...args); bill(...args);});
   const read = file => fs.readFile(path.join(root, 'media', file), 'utf8');
-  const scripts = ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'];
+  const scripts = ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'];
   const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + await read('style.css') + '</style></head><body>' + await read('body.html') + '<script>window.savedState=null;window.messages=[];window.acquireVsCodeApi=()=>({getState:()=>null,setState:s=>window.savedState=structuredClone(s),postMessage:m=>window.messages.push(m)});</script>' + (await Promise.all(scripts.map(async name => '<script>' + await read(name) + '</script>'))).join('') + '</body></html>';
   const browser = await chromium.launch(browserOptions);
   const result = {status: 'RUNNING', cases: [], errors: []};

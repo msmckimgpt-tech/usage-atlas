@@ -14,7 +14,7 @@ const records = ['codex', 'claude'].flatMap(provider => [0, 1, 2].map(i => ({
 const data = project(records);
 for (const provider of Object.values(data)) for (const points of Object.values(provider.windows)) for (const p of points) p.creditEstimate = {nativeUsage: p.credit.usage, nativeUsageContinuous: p.credit.usageContinuous};
 const model = {type: 'data', now, data, colorMode: 'dark'};
-const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
+const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const report = {status: 'RUNNING', cases: [], errors: []};
@@ -47,9 +47,9 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
       await page.mouse.move(point.x, point.y); await frame();
       assert.match(await page.locator('#ua-tooltip').textContent(), expected);
     };
-    await page.locator('#ua-codex').click(); await frame(); await hover('codex', /Codex \/ 주간 환산 \/ ≈[\d,.]+% · 20\.93 크레딧/);
-    await page.locator('#ua-codex').click(); await page.locator('#ua-claude').click(); await frame(); await hover('claude', /Claude Code \/ 주간 환산 \/ ≈[\d,.]+% · 0\.222222 USD/);
-    await page.locator('#ua-claude').click(); await page.mouse.move(0, 0); await frame();
+    await page.locator('#ua-claude').click(); await frame(); await hover('codex', /Codex \/ 주간 환산 \/ ≈[\d,.]+% · 20\.93 크레딧/);
+    await page.locator('#ua-claude').click(); await page.locator('#ua-codex').click(); await frame(); await hover('claude', /Claude Code \/ 주간 환산 \/ ≈[\d,.]+% · 0\.222222 USD/);
+    await page.locator('#ua-codex').click(); await page.mouse.move(0, 0); await frame();
     await update({codexCreditDecimals: 0, claudeUsdDecimals: 0});
     assert.match(await page.locator('#ua-codex-credit').textContent(), /21 크레딧 · 잔액 980/);
     assert.equal(await page.locator('#ua-claude-credit').textContent(), '관측 지출 $0');

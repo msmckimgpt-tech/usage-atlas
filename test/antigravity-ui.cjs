@@ -11,7 +11,7 @@ const antigravity = [-2, -1, 0].flatMap(i => snapshots({response: {groups}}, {ac
 const records = [...source, ...antigravity].sort((a, b) => a.time - b.time), ids = antigravity.slice(-3).map(s => s.provider);
 const capacities = ids.flatMap(provider => ['five', 'week'].map(window => ({provider, account: hash('fixture-google'), plan: 'g1-pro-tier', window, time: now - 2 * hour, mult: 5})));
 const model = {type: 'data', now, firstObserved: now - 2 * hour, data: project(records, capacities), detailsEnabled: true};
-const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.saved=null;window.messages=[];window.acquireVsCodeApi=()=>({getState:()=>null,setState:v=>window.saved=structuredClone(v),postMessage:m=>window.messages.push(m)});</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'details.js', 'app.js'].map(f => '<script>' + read(f) + '</script>').join('') + '</body></html>';
+const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.saved=null;window.messages=[];window.acquireVsCodeApi=()=>({getState:()=>null,setState:v=>window.saved=structuredClone(v),postMessage:m=>window.messages.push(m)});</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'details.js', 'app.js'].map(f => '<script>' + read(f) + '</script>').join('') + '</body></html>';
 (async () => {
   const browser = await chromium.launch(browserOptions), result = {status: 'RUNNING', errors: []};
   try {
@@ -28,13 +28,15 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     for (const id of ids) assert.ok(await page.locator('[data-series="' + id + '-week"]').count() > 0, 'unknown credit must not erase quota');
     assert.deepEqual(await page.locator('#ua-chart').boundingBox(), geometry);
     await page.locator('#ua-' + ids[0]).click(); await stable();
-    assert.deepEqual([...new Set(await page.locator('[data-series]').evaluateAll(nodes => nodes.map(n => n.dataset.series.split(/-(five|week)$/)[0])))], [ids[0]]);
-    await page.locator('#ua-' + ids[1]).click(); await stable(); assert.equal(await page.locator('#usage-atlas').getAttribute('data-focused-provider'), ids[1]);
-    await page.locator('#ua-' + ids[1]).click(); await stable(); assert.equal(await page.locator('#usage-atlas').getAttribute('data-focused-provider'), 'all');
+    assert.equal(await page.locator('[data-series="' + ids[0] + '-week"]').count(), 0);
+    assert.ok(await page.locator('[data-series="' + ids[1] + '-week"]').count());
+    await page.locator('#ua-' + ids[1]).click(); await stable();
+    assert.equal(await page.locator('[data-series="' + ids[1] + '-week"]').count(), 0);
+    await page.locator('#ua-' + ids[0]).click(); await page.locator('#ua-' + ids[1]).click(); await stable();
     for (const mode of ['delta', 'total', 'usage']) {await page.locator('#ua-mode').selectOption(mode); await stable(); for (const id of ids) assert.ok(await page.locator('[data-series="' + id + '-week"]').count() > 0);}
     await page.locator('#ua-basis').selectOption('base'); await page.locator('#ua-refs').check(); await stable();
     assert.equal(await page.locator('[data-series="' + ids[0] + '-week"]').first().evaluate(n => n.__data__.at(-1).y), 100);
-    await page.locator('#ua-' + ids[0]).click(); await stable(); await page.locator('[data-details-line="' + ids[0] + '-week"]').first().focus(); await page.keyboard.press('Enter');
+    await page.locator('[data-details-line="' + ids[0] + '-week"]').first().focus(); await page.keyboard.press('Enter');
     assert.equal(await page.evaluate(() => window.messages.at(-1).provider), ids[0]);
     await page.locator('#ua-details-close').click();
     await page.screenshot({path: path.join(root, 'screenshots/antigravity-wide.png')});
@@ -43,6 +45,6 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     assert.ok(await page.locator('#ua-chart').evaluate(n => n.getBoundingClientRect().height >= 200));
     await page.screenshot({path: path.join(root, 'screenshots/antigravity-narrow.png')});
     assert.deepEqual(result.errors, []);
-    result.status = 'PASS'; result.groups = 3; result.modes = 3; result.creditNoShift = true; result.focus = true; result.responsive = true;
+    result.status = 'PASS'; result.groups = 3; result.modes = 3; result.creditNoShift = true; result.independentToggle = true; result.responsive = true;
   } finally {await browser.close(); fs.writeFileSync(path.join(root, 'test-antigravity-ui.json'), JSON.stringify(result, null, 2));}
 })().catch(e => {console.error(e); process.exitCode = 1;});

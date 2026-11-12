@@ -2,7 +2,7 @@
  * Usage Atlas modal implementation; see licenses/Codexon-LICENSE.txt. */
 (() => {
   'use strict';
-  const providerName = (id, label) => globalThis.usageAtlasProviderFocus?.name(id, label) || ({codex: 'Codex', claude: 'Claude Code'}[id] || 'Antigravity');
+  const providerName = (id, label) => globalThis.usageAtlasProviderVisibility?.name(id, label) || ({codex: 'Codex', claude: 'Claude Code'}[id] || 'Antigravity');
   const labels = {
     provider: '제공자'
   , account: '계정'

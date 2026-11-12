@@ -13,7 +13,7 @@ const {PatternBook} = require('./pattern-book.cjs');
 const forecastLearning = require('./forecast-learning.cjs');
 const adapters = require('./adapters.cjs');
 const antigravity = require('./antigravity.cjs');
-const providerCatalog = require('../media/provider-focus.js');
+const providerCatalog = require('../media/provider-visibility.js');
 const {intervalSeconds, wakeDelay, retime, adaptiveInterval, advanceOnWake} = require('./schedule.cjs');
 const {Diagnostics} = require('./diagnostics.cjs');
 const {ObservationQueue} = require('./observation-queue.cjs');
@@ -24,6 +24,7 @@ const {selection, createExclusion, validateExclusions} = require('./details-sele
 let stop;
 async function activate(context) {
   const cfg = () => vscode.workspace.getConfiguration('usageAtlas');
+  const displayConfig = () => providerCatalog.settings((key, fallback) => cfg().get(key, fallback));
 // 적응형 수집의 유휴 간격까지 포함한 최대 예상 조회 간격(초). 연속성·기록 지연 판정의 기준이다.
 const maxIntervalSeconds = () => {
   const base = intervalSeconds(cfg().get('intervalSeconds'));
@@ -110,12 +111,12 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10);
   let hoverCache;
   function updateStatus() {
-    const key = {records, metadata, projection: projected(), forecastEnabled: cfg().get('forecastEnabled', true), creditBasis: cfg().get('creditBasis', 'subscription'), colorMode: cfg().get('colorMode', 'system'), minute: Math.floor(Date.now() / 60000), theme: vscode.window.activeColorTheme.kind, interval: maxIntervalSeconds(), enabled: cfg().get('enabled'), trusted: vscode.workspace.isTrusted, codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4)};
+    const key = {records, metadata, visibility: JSON.stringify(displayConfig()), projection: projected(), forecastEnabled: cfg().get('forecastEnabled', true), creditBasis: cfg().get('creditBasis', 'subscription'), colorMode: cfg().get('colorMode', 'system'), minute: Math.floor(Date.now() / 60000), theme: vscode.window.activeColorTheme.kind, interval: maxIntervalSeconds(), enabled: cfg().get('enabled'), trusted: vscode.workspace.isTrusted, codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4)};
     if (hoverCache && Object.keys(key).every(k => key[k] === hoverCache[k])) return;
     const message = !key.enabled ? '수집 중지' : !key.trusted ? '작업 영역 신뢰 필요' : null;
     const collectors = message ? Object.fromEntries(Object.keys(key.projection).map(id => [id, {message}])) : Object.fromEntries(Object.keys(key.projection).map(id => [id, metadata.collectors[collectorId(id)]]));
     const dark = key.colorMode === 'dark' || key.colorMode !== 'light' && [vscode.ColorThemeKind.Dark, vscode.ColorThemeKind.HighContrast].includes(key.theme);
-    const p = preview(records, {projection: key.projection, creditBasis: key.creditBasis, forecastEnabled: key.forecastEnabled, dark, capacities: metadata.capacities, collectors, codexCreditDecimals: key.codexCreditDecimals, claudeUsdDecimals: key.claudeUsdDecimals, maxGap: Math.max(1800000, key.interval * 3000), staleAfterMs: Math.max(900000, key.interval * 3000)});
+    const p = preview(records, {projection: key.projection, visibility: displayConfig(), creditBasis: key.creditBasis, forecastEnabled: key.forecastEnabled, dark, capacities: metadata.capacities, collectors, codexCreditDecimals: key.codexCreditDecimals, claudeUsdDecimals: key.claudeUsdDecimals, maxGap: Math.max(1800000, key.interval * 3000), staleAfterMs: Math.max(900000, key.interval * 3000)});
     const md = new vscode.MarkdownString('', true);
     md.supportHtml = true;
     md.isTrusted = {enabledCommands: ['usageAtlas.settings']};
@@ -180,7 +181,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
       data[id] = {...p, status: metadata.collectors[collectorId(id)]};
 
     }
-    return {type: 'data', now, firstObserved, data, creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: records.length};
+    return {type: 'data', now, firstObserved, data, visibility: displayConfig(), creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: records.length};
   }
   async function sendView() {
     if (!panel?.visible || !uiReady || sentRevision === revision && !viewRefreshPending) return;
@@ -453,7 +454,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     const nonce = crypto.randomBytes(18).toString('base64');
     const resource = file => current.webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media', file)).toString();
     const initial = JSON.stringify({...payload(), revision}).replace(/</g, '\\u003c');
-    current.webview.html = `<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${current.webview.cspSource}; style-src ${current.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'none';"><link rel="stylesheet" href="${resource('style.css')}"><script defer nonce="${nonce}" src="${resource('d3.min.js')}"></script><script defer nonce="${nonce}" src="${resource('gaps.js')}"></script><script defer nonce="${nonce}" src="${resource('time-axis.js')}"></script><script defer nonce="${nonce}" src="${resource('amount-format.js')}"></script><script defer nonce="${nonce}" src="${resource('credit-series.js')}"></script><script defer nonce="${nonce}" src="${resource('chart-series.js')}"></script><script defer nonce="${nonce}" src="${resource('forecast.js')}"></script><script defer nonce="${nonce}" src="${resource('details.js')}"></script><script defer nonce="${nonce}" src="${resource('provider-focus.js')}"></script><script defer nonce="${nonce}" src="${resource('app.js')}"></script></head><body>${body}<script type="application/json" id="ua-initial-data" nonce="${nonce}">${initial}</script></body></html>`;
+    current.webview.html = `<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${current.webview.cspSource}; style-src ${current.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'none';"><link rel="stylesheet" href="${resource('style.css')}"><script defer nonce="${nonce}" src="${resource('d3.min.js')}"></script><script defer nonce="${nonce}" src="${resource('gaps.js')}"></script><script defer nonce="${nonce}" src="${resource('time-axis.js')}"></script><script defer nonce="${nonce}" src="${resource('amount-format.js')}"></script><script defer nonce="${nonce}" src="${resource('credit-series.js')}"></script><script defer nonce="${nonce}" src="${resource('chart-series.js')}"></script><script defer nonce="${nonce}" src="${resource('forecast.js')}"></script><script defer nonce="${nonce}" src="${resource('details.js')}"></script><script defer nonce="${nonce}" src="${resource('provider-visibility.js')}"></script><script defer nonce="${nonce}" src="${resource('app.js')}"></script></head><body>${body}<script type="application/json" id="ua-initial-data" nonce="${nonce}">${initial}</script></body></html>`;
   }
   async function changeMeta(fn) {const r = await store.withLock(async () => {await loadMeta(); await fn(); projectionCache = null; await saveMeta(); return true;}); if (!r) vscode.window.showInformationMessage('수집 중입니다. 잠시 후 다시 시도하세요.'); await publish(); return Boolean(r);}
   async function selectWindow() {

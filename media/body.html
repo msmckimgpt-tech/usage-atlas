@@ -1,13 +1,13 @@
 <div id="usage-atlas">
-  <nav class="ua-providers" aria-label="제공자 표시">
-    <button id="ua-codex" class="ua-provider" type="button" aria-pressed="false">
+  <nav class="ua-providers" aria-label="모델별 그래프 표시">
+    <button id="ua-codex" class="ua-provider" type="button" aria-pressed="true">
       <span class="ua-provider-head"><span class="ua-dot ua-dot-codex"></span><strong>Codex</strong><span class="ua-check" aria-hidden="true">✓</span></span>
       <span class="ua-quota"><span class="ua-window"><i class="ua-line"></i>5시간</span><span data-legend-cell="codex-five">-</span></span>
       <span class="ua-quota"><span class="ua-window"><i class="ua-line ua-week"></i>주간</span><span data-legend-cell="codex-week">-</span></span>
       <span id="ua-codex-status" class="ua-provider-status">수집 대기</span>
       <span id="ua-codex-credit" class="ua-provider-credit"></span>
     </button>
-    <button id="ua-claude" class="ua-provider" type="button" aria-pressed="false">
+    <button id="ua-claude" class="ua-provider" type="button" aria-pressed="true">
       <span class="ua-provider-head"><span class="ua-dot ua-dot-claude"></span><strong>Claude Code</strong><span class="ua-check" aria-hidden="true">✓</span></span>
       <span class="ua-quota"><span class="ua-window"><i class="ua-line"></i>5시간</span><span data-legend-cell="claude-five">-</span></span>
       <span class="ua-quota"><span class="ua-window"><i class="ua-line ua-week"></i>주간</span><span data-legend-cell="claude-week">-</span></span>
@@ -23,7 +23,7 @@
     <button id="ua-settings" type="button" aria-label="설정" title="설정">⚙</button>
   </div>
   <div class="ua-graph">
-    <svg id="ua-chart" role="group" aria-label="Codex와 Claude Code의 5시간 실선 및 주간 점선 사용량과 초기화 시각. 선을 클릭하거나 선에 초점을 두고 Enter 또는 Space로 상세 분석을 엽니다. 가로 드래그로 확대, Ctrl 휠로 마우스 위치 기준 확대 축소, Shift 휠로 수평 이동합니다."></svg>
+    <svg id="ua-chart" role="group" aria-label="선택한 모델의 5시간 실선 및 주간 점선 사용량과 초기화 시각. 선을 클릭하거나 선에 초점을 두고 Enter 또는 Space로 상세 분석을 엽니다. 가로 드래그로 확대, Ctrl 휠로 마우스 위치 기준 확대 축소, Shift 휠로 수평 이동합니다."></svg>
     <div id="ua-tooltip" class="ua-tip" role="tooltip" hidden></div>
     <div id="ua-navigator" class="ua-navigator" role="group" aria-label="표시 기간 조절" aria-describedby="ua-nav-help" title="몸통 드래그: 이동 · 양 끝 드래그: 기간 조절 · 더블클릭: 설정한 기본 기간">
       <div class="ua-nav-rail"></div><span id="ua-nav-now" class="ua-nav-now" aria-hidden="true"></span>

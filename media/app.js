@@ -10,25 +10,26 @@
   const eventLabels = {'early-reset': '예정 전 초기화', 'scheduled-reset': '초기화', decrease: '사용률 하락', 'schedule-change': '예정 변경'};
   const colors = {codex: 'var(--ua-a)', claude: 'var(--ua-b)'};
   const week = 7 * 86400000, minSpan = 60000;
-  const providerFocus = globalThis.usageAtlasProviderFocus;
-  const defaults = {version: 5, mode: 'usage', basis: 'current', theme: 'system', focusedProvider: null, credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, range: null};
+  const providerVisibility = globalThis.usageAtlasProviderVisibility;
+  const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, range: null};
   let state = {...defaults}, model = {now: Date.now(), data: {}}, raf, view, gesture = null, chartDrag = null;
   const initialNode = document.getElementById('ua-initial-data');
   if (initialNode) {const initial = JSON.parse(initialNode.textContent); if (initial?.type === 'data' && initial.data && Number.isFinite(initial.now)) model = initial; initialNode.remove();}
   const details = globalThis.usageAtlasDetails?.({api, root, getModel: () => model});
   const saved = api.getState();
-  if ([3, 4, 5].includes(saved?.version)) {
+  if ([3, 4, 5, 6].includes(saved?.version)) {
     for (const [key, values] of Object.entries({mode: ['usage', 'delta', 'total'], basis: ['current', 'base'], theme: ['system', 'light', 'dark'], creditMode: ['money', 'estimate']})) if (values.includes(saved[key])) state[key] = saved[key];
     for (const key of ['credit', 'refs']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
     if (Array.isArray(saved.range) && saved.range.length === 2 && saved.range.every(Number.isFinite) && saved.range[0] < saved.range[1]) state.range = [...saved.range];
   }
-  state.focusedProvider = providerFocus.restore([...ids, ...(providerFocus.isAntigravity(saved?.focusedProvider) || saved?.focusedProvider === 'antigravity' ? [saved.focusedProvider] : [])], saved);
+  let legacySelection = saved && [3, 4, 5].includes(saved.version) && !initialNode ? saved : null;
+  state.hiddenProviders = providerVisibility.restore([...new Set([...ids, ...Object.keys(model.data)])], saved);
   state.creditBasis = ['subscription', 'billing'].includes(model.creditBasis) ? model.creditBasis : defaults.creditBasis;
   let basisPending = null;
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
   let hoveredProvider = null;
   function emphasize(provider) {
-    const target = providerFocus.visible(ids, state.focusedProvider).includes(provider) ? provider : null;
+    const target = providerVisibility.visible(ids, state.hiddenProviders).includes(provider) ? provider : null;
     for (const node of el('chart').querySelectorAll('[data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range]')) {
       const key = node.dataset.series || node.dataset.reset || node.dataset.interpolated || node.dataset.cycleEnd || node.dataset.forecast || node.dataset.forecastTrend || node.dataset.forecastMarker || node.dataset.forecastRange || '';
       const owner = providerKeys.find(id => key === id || key.startsWith(id + '-'));
@@ -108,12 +109,12 @@
         descriptions.push(cell.title);
       }
       el(id + '-status').textContent = status; el(id + '-status').title = detail;
-      el(id).title = (state.focusedProvider === id ? '전체 모델 보기로 돌아가기' : names[id] + ' 집중 보기') + ' · ' + detail; el(id).dataset.stale = String(stale || message !== '정상');
-      el(id).setAttribute('aria-label', `${names[id]} 집중 보기. 같은 버튼을 다시 누르면 전체 보기. ${descriptions.join('. ')}. ${detail}`);
+      el(id).title = (state.hiddenProviders.includes(id) ? names[id] + ' 그래프 표시' : names[id] + ' 그래프 숨기기') + ' · ' + detail; el(id).dataset.stale = String(stale || message !== '정상');
+      el(id).setAttribute('aria-label', `${names[id]} 그래프 ${state.hiddenProviders.includes(id) ? '표시' : '숨기기'}. ${descriptions.join('. ')}. ${detail}`);
       const unit = creditUnit(id), total = creditAt(id, model.now);
       const summary = !creditAvailable(id) || !number(total) ? '-' : unit === 'credits' ? `관측 감소 ${creditNumber(total, id)} 크레딧${number(last?.creditBalance) ? ' · 잔액 ' + creditNumber(last.creditBalance, id) : ''}` : `관측 지출 $${creditNumber(total, id)}`;
       const pending = state.credit && !canEstimate(id);
-      if (providerFocus.isAntigravity(id) || id === 'antigravity') {el(id + '-credit').textContent = state.credit ? '-' : ''; el(id + '-credit').title = '추가 크레딧 소비 자료 없음'; el(id).dataset.creditState = state.credit ? 'unavailable' : 'off'; continue;}
+      if (providerVisibility.isAntigravity(id) || id === 'antigravity') {el(id + '-credit').textContent = state.credit ? '-' : ''; el(id + '-credit').title = '추가 크레딧 소비 자료 없음'; el(id).dataset.creditState = state.credit ? 'unavailable' : 'off'; continue;}
       const conversion = state.creditBasis === 'billing' ? (pending ? '금액 기준 · 가격 미확인' : '공식 월 기본 구독료 대비 지출 비율') : pending ? `자동 환산 대기 · ${!creditAvailable(id) ? '원단위 기록 없음' : state.mode === 'usage' && !number(total) ? '주간 기준 미확인' : '관측 근거 부족'} · 합산 대기` : state.creditMode === 'estimate' ? '사용률에 추정 합산' : '크레딧·금액 ' + ({usage: '주간 사용', delta: '변화량', total: '전체 누적'}[state.mode]);
       el(id).dataset.creditState = !state.credit ? 'off' : pending ? 'pending' : displayCreditMode() === 'estimate' ? 'estimated' : 'native';
       el(id + '-credit').textContent = !state.credit ? '' : pending ? (state.creditMode === 'money' ? summary + ' · 환산 대기' : conversion) : state.creditMode === 'estimate' ? '추정 합산 · ' + summary : summary;
@@ -127,17 +128,19 @@
   const quota = (id, w) => chartGraphs.quota(model.data[id], id, w, {...state, credit: state.credit && state.creditBasis !== 'billing'});
 
   function syncProviders() {
-    const extra = Object.keys(model.data).filter(id => providerFocus.isAntigravity(id) || id === 'antigravity');
-    ids.splice(0, ids.length, 'codex', 'claude', ...extra);
+    const extra = Object.keys(model.data).filter(id => providerVisibility.isAntigravity(id) || id === 'antigravity');
+    const available = ['codex', 'claude', ...extra];
+    ids.splice(0, ids.length, ...available.filter(id => providerVisibility.enabled(id, model.data[id], model.visibility)));
+    for (const id of ['codex', 'claude']) el(id).hidden = !ids.includes(id);
     providerKeys.splice(0, providerKeys.length, ...[...ids].sort((a, b) => b.length - a.length));
     for (const node of root.querySelectorAll('[data-antigravity]')) if (!ids.includes(node.dataset.antigravity)) node.remove();
-    for (const id of extra) {
+    for (const id of extra.filter(id => ids.includes(id))) {
       const label = model.data[id]?.last?.label;
-      names[id] = providerFocus.name(id, label);
-      colors[id] = 'light-dark(' + providerFocus.color(id, false) + ',' + providerFocus.color(id, true) + ')';
+      names[id] = providerVisibility.name(id, label);
+      colors[id] = 'light-dark(' + providerVisibility.color(id, false) + ',' + providerVisibility.color(id, true) + ')';
       let button = el(id);
       if (!button) {
-        button = el('codex').cloneNode(true); button.id = 'ua-' + id; button.dataset.antigravity = id;
+        button = el('codex').cloneNode(true); button.hidden = false; button.id = 'ua-' + id; button.dataset.antigravity = id;
         button.querySelector('strong').textContent = names[id];
         button.querySelector('.ua-dot').className = 'ua-dot ua-dot-antigravity';
         for (const node of button.querySelectorAll('[id]')) node.id = node.id.replace('codex', id);
@@ -146,15 +149,17 @@
       }
       button.querySelector('strong').textContent = names[id]; button.style.setProperty('--c', colors[id]);
     }
-    root.querySelector('.ua-providers').dataset.expanded = String(extra.length > 0);
+    root.querySelector('.ua-providers').dataset.expanded = String(ids.length > 2);
+    root.querySelector('.ua-providers').dataset.count = ids.length;
+    root.querySelector('.ua-providers').hidden = ids.length === 0;
   }
   function sync() {
     syncProviders();
     for (const k of ['mode', 'basis']) el(k).value = state[k];
     for (const k of ['credit', 'refs']) el(k).checked = state[k];
-    const visible = providerFocus.visible(ids, state.focusedProvider);
-    root.dataset.focusedProvider = state.focusedProvider || 'all';
-    for (const id of ids) {el(id).setAttribute('aria-pressed', String(state.focusedProvider === id)); el(id).dataset.visible = String(visible.includes(id));}
+    const visible = providerVisibility.visible(ids, state.hiddenProviders);
+    root.dataset.visibleProviders = visible.join(',');
+    for (const id of ids) {el(id).setAttribute('aria-pressed', String(visible.includes(id))); el(id).dataset.visible = String(visible.includes(id));}
     el('credit-mode').value = displayCreditMode(); el('credit-mode').disabled = !state.credit;
     el('credit-mode').querySelector('[value=estimate]').disabled = state.creditBasis === 'billing';
     for (const value of ['subscription', 'billing']) {el('credit-' + value).checked = state.creditBasis === value; el('credit-' + value).disabled = !state.credit;}
@@ -184,7 +189,7 @@
     const chartBox = el('chart').getBoundingClientRect(), width = Math.max(240, chartBox.width), narrow = width < 700;
     const height = Math.max(200, chartBox.height), left = narrow ? 42 : 58, right = Math.max(left + 60, width - 12), top = 32;
     svg.attr('viewBox', `0 0 ${width} ${height}`).attr('height', height);
-    const visible = providerFocus.visible(ids, state.focusedProvider);
+    const visible = providerVisibility.visible(ids, state.hiddenProviders);
     const data = visible.flatMap(id => ['five', 'week'].flatMap(w => quota(id, w))).map(s => ({...s, bridges:gaps.bridges(s.points, 'y')}));
     const all = ids.flatMap(id => Object.values(model.data[id]?.windows || {}).flat());
     const resets = visible.flatMap(id => ['five', 'week'].map(w => ({id, w, time: model.data[id]?.last?.windows[w]?.reset}))).filter(r => number(r.time) && r.time > model.now);
@@ -593,7 +598,7 @@
   for (const basis of ['subscription', 'billing']) el('credit-' + basis).addEventListener('change', event => {if (!event.target.checked) return; state.creditBasis = basis; basisPending = basis; save(); api.postMessage({type: 'creditBasis', value: basis}); requestDraw();});
   el('credit-mode').addEventListener('change', () => {state.creditMode = el('credit-mode').value; save(); requestDraw();});
   function bindProvider(id) {
-    el(id).addEventListener('click', () => {state.focusedProvider = providerFocus.toggle(ids, state.focusedProvider, id); hoveredProvider = null; save(); requestDraw();});
+    el(id).addEventListener('click', () => {state.hiddenProviders = providerVisibility.toggle(ids, state.hiddenProviders, id); hoveredProvider = null; save(); requestDraw();});
     for (const event of ['pointerenter', 'focus']) el(id).addEventListener(event, () => {hoveredProvider = id; emphasize(id);});
     for (const event of ['pointerleave', 'blur']) el(id).addEventListener(event, () => {hoveredProvider = null; emphasize(null);});
   }
@@ -703,6 +708,7 @@
         if (gesture) {const pointerId = gesture.pointerId; finish({type: 'pointercancel', pointerId}); if (nav.hasPointerCapture(pointerId)) nav.releasePointerCapture(pointerId);}
       }
       model = e.data;
+      if (legacySelection) {state.hiddenProviders = providerVisibility.restore([...new Set(['codex', 'claude', ...Object.keys(model.data)])], legacySelection); legacySelection = null; save();}
       if (['subscription', 'billing'].includes(model.creditBasis) && (!basisPending || model.creditBasis === basisPending)) {state.creditBasis = model.creditBasis; basisPending = null;}
       if (changed) {state.range = null; save();}
       requestDraw();

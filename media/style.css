@@ -39,6 +39,7 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 #usage-atlas .ua-providers{display:grid;flex-shrink:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}
 #usage-atlas .ua-providers[data-expanded=true]{grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}
 #usage-atlas .ua-dot-antigravity{border-radius:2px;transform:rotate(45deg)}
+#usage-atlas .ua-providers[data-count="1"]{grid-template-columns:minmax(0,1fr)}
 #usage-atlas .ua-provider{--c:var(--ua-a);display:grid;gap:4px;text-align:left;min-width:0;width:100%;padding:9px 12px;background:var(--ua-panel);font-variant-numeric:tabular-nums}
 #usage-atlas #ua-claude{--c:var(--ua-b)}
 #usage-atlas .ua-provider[data-visible=false]{background:var(--ua-bg);color:var(--ua-muted);border-style:dashed}

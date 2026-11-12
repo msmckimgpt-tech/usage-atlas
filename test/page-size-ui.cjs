@@ -12,7 +12,7 @@ const records = ['codex', 'claude'].flatMap(provider => [0, 1, 2].map(i => ({
   , ...(provider === 'codex' ? {creditBalance: 1000 - i * 10} : {spentUsd: i, spendPeriod: '2026-10'})
 }))).sort((a, b) => a.time - b.time);
 const model = {type: 'data', now, data: project(records), colorMode: 'dark'};
-const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-focus.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
+const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:()=>{}});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const report = {status: 'RUNNING', cases: [], errors: []};

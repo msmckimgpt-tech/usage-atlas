@@ -175,11 +175,13 @@ exports.run = async () => {
     await frame.waitForFunction(time => ['codex-five', 'codex-week', 'claude-five', 'claude-week'].every(key => [...document.querySelectorAll('[data-series="' + key + '"]')].some(node => node.__data__?.at(-1)?.time === time)), creditFixture.now);
     await workbench.screenshot({path: path.join(root, 'screenshots/cumulative-credit-native.png')});
     result.cumulativeCredits = {schema: 5, ratioOnlyDebits: 1, oldCacheRejected: true, nativeAndAdditiveReachLatest: true, bothProviders: true};
-    await frame.locator('#ua-codex').click(); await frame.waitForFunction(() => !document.querySelector('[data-series^="claude-"]') && !!document.querySelector('[data-series^="codex-"]'));
+    await frame.locator('#ua-claude').click(); await frame.waitForFunction(() => !document.querySelector('[data-series^="claude-"]') && !!document.querySelector('[data-series^="codex-"]'));
     assert.equal(await frame.locator('#ua-codex').getAttribute('aria-pressed'), 'true');
+    assert.equal(await frame.locator('#ua-claude').getAttribute('aria-pressed'), 'false');
+    await frame.locator('#ua-codex').click(); await frame.waitForFunction(() => !document.querySelector('[data-series]'));
     await frame.locator('#ua-claude').click(); await frame.waitForFunction(() => !document.querySelector('[data-series^="codex-"]') && !!document.querySelector('[data-series^="claude-"]'));
-    await frame.locator('#ua-claude').click(); await frame.waitForFunction(() => !!document.querySelector('[data-series^="codex-"]') && !!document.querySelector('[data-series^="claude-"]'));
-    result.modelFocus = {solo: true, switch: true, sameButtonRestoresAll: true};
+    await frame.locator('#ua-codex').click(); await frame.waitForFunction(() => !!document.querySelector('[data-series^="codex-"]') && !!document.querySelector('[data-series^="claude-"]'));
+    result.modelVisibility = {independent: true, allOff: true, restoresOnlyClickedModel: true};
 
     const gapFixture = require('./credit-gap-fixture.cjs').fixture(Date.now()), gapModel = creditEngine.buildConversion(gapFixture);
     await new Store(api.storagePath).withLock(async () => {
@@ -375,7 +377,9 @@ exports.run = async () => {
     const agId = agRows[0].provider;
     await frame.waitForFunction(id => !!document.getElementById('ua-' + id), agId);
     await frame.locator('#ua-' + agId).click();
-    await frame.waitForFunction(id => document.getElementById('usage-atlas').dataset.focusedProvider === id, agId);
+    await frame.waitForFunction(id => !document.querySelector('[data-series="' + id + '-week"]'), agId);
+    await frame.locator('#ua-' + agId).click();
+    await frame.waitForFunction(id => !!document.querySelector('[data-series="' + id + '-week"]'), agId);
     assert.ok(await frame.locator('[data-series="' + agId + '-week"]').count());
     await frame.locator('[data-details-line="' + agId + '-week"]').first().focus(); await workbench.keyboard.press('Enter');
     await frame.waitForFunction(() => document.getElementById('ua-panel-report').textContent.includes('사용률 관측'));
@@ -386,7 +390,17 @@ exports.run = async () => {
     assert.match(await forecastHover.textContent(), /Antigravity.*Gemini/); assert.equal(await forecastHover.locator('tbody tr').count(), 3);
     await forecastImage.evaluate(n => n.decode()); assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360);
     await forecastHover.screenshot({path: path.join(root, 'screenshots/antigravity-preview-native.png')});
-    result.antigravity = {nativeCspWebview: true, focus: true, previewRows: 3, independentWindows: true, providerRequests: 0};
+    await workbench.mouse.move(10, 10);
+    await cfg.update('display.antigravity', false, vscode.ConfigurationTarget.Global);
+    await frame.waitForFunction(() => !document.querySelector('[data-antigravity]'));
+    assert.ok(api.snapshot().data[agId]);
+    await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible'});
+    assert.equal(await forecastHover.locator('tbody tr').count(), 2);
+    await workbench.mouse.move(10, 10); await cfg.update('display.codex', false, vscode.ConfigurationTarget.Global); await cfg.update('display.antigravity', true, vscode.ConfigurationTarget.Global);
+    await frame.waitForFunction(id => document.getElementById('ua-codex')?.hidden === true && document.getElementById('ua-' + id)?.hidden === false, agId);
+    await cfg.update('display.codex', true, vscode.ConfigurationTarget.Global);
+    result.displaySettings = {nativeSettingsUpdates: true, pageAndPreviewAgree: true, sourceDataPreserved: true};
+    result.antigravity = {nativeCspWebview: true, independentToggle: true, previewRows: 3, independentWindows: true, providerRequests: 0};
     assert.equal(calls, 0, 'opening, graph details, settings and local indexing never request providers');
     result.providerRequests = calls; result.status = 'PASS';
   } catch (error) {result.status = 'FAIL'; result.error = error.stack; throw error;}

@@ -2,7 +2,7 @@
   "name": "usage-atlas"
 , "displayName": "Usage Atlas"
 , "description": "Codex, Claude Code, Antigravity 사용량 기록과 계획"
-, "version": "0.3.2"
+, "version": "0.3.3"
 , "publisher": "local-tools"
 , "license": "SEE LICENSE IN LICENSE"
 , "engines": {

@@ -146,7 +146,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     const interval = maxIntervalSeconds(), gap = Math.max(1800000, interval * 3000);
     const enabled = cfg().get('forecastEnabled', true);
     const forecastOptions = forecastConfig(interval);
-    const forecastKey = JSON.stringify([enabled, forecasts.settings(forecastOptions)]);
+    const forecastKey = JSON.stringify([forecasts.revision, enabled, forecasts.settings(forecastOptions)]);
     const billingKey = billing.catalog.version;
     patternBook.configure(metadata.capacities, cfg().get('retentionDays'), metadata.forecastPatternEpoch);
     if (!projectionCache || projectionCache.records !== records || projectionCache.capacities !== metadata.capacities || projectionCache.gap !== gap || projectionCache.conversion !== currentConversion() || projectionCache.forecastKey !== forecastKey || projectionCache.learned !== learnedForecast || projectionCache.bookRevision !== patternBook.revision || projectionCache.billingKey !== billingKey) {

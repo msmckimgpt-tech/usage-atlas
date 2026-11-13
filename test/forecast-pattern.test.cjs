@@ -83,12 +83,15 @@ test('corrected curves share ETA across base, cumulative and credit displays; de
   assert.equal(forecast.curve(value, last, {mode: 'delta'}, now), null);
   assert.equal(forecast.curve(value, last, {}, now + 16 * 60000), null);
 });
-test('well observed recent idle time can use historical future activity while insufficient or recovering current readings cannot', () => {
+test('observed idle time blends history while an insufficient recent reading uses qualified history only', () => {
   const input = fixture.points(now), idle = input.map(p => p.time >= now - hour ? {...p, value: 30, delta: p.continuous ? 0 : p.delta} : p);
   const value = forecast.estimate(idle, 'five'); assert.ok(value.pattern); assert.equal(value.ratePerHour, 0);
   assert.ok(forecast.curve(value, idle.at(-1), {}, now));
   const short = input.slice(0, -1); short.at(-1).continuous = false;
-  assert.equal(forecast.estimate(short, 'five').pattern, undefined);
+  const fallback = forecast.estimate(short, 'five');
+  assert.equal(fallback.pattern.weight, 1); assert.equal(fallback.ratePerHour, null);
+  const curve = forecast.curve(fallback, short.at(-1), {}, short.at(-1).time);
+  assert.equal(curve.points[0].y, short.at(-1).value);
 });
 test('explicit pattern timezone supports fractional UTC offsets', () => {
   const input = fixture.points(now);

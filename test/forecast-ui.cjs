@@ -142,6 +142,32 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     await page.setViewportSize({width: 1440, height: 900}); await page.locator('#ua-mode').selectOption('usage'); await page.locator('#ua-basis').selectOption('current'); await update({data: ranged});
     await page.screenshot({path: path.join(root, 'screenshots/forecast-monotone-range-wide.png')});
     report.cases.push('both providers and windows: error-band data and actual SVG boundaries stay nondecreasing in usage/total, current/base, 1440/360px');
+    const fallbackNow = Date.parse('2026-11-13T12:00:00+09:00'), hour = 3600000;
+    const fallbackRecords = ['codex', 'claude', 'antigravity-5d72436256ada538'].flatMap(id => {
+      const source = require('./pattern-fixture.cjs').records(fallbackNow, id);
+      source[source.length - 3].time = fallbackNow - 4 * hour;
+      return source;
+    }).sort((a, b) => a.time - b.time);
+    const fallbackData = project(fallbackRecords, [], undefined, undefined, (_id, _mine, windows) => forecast.provider(windows, {learning: {five: {method: 'recent'}, week: {method: 'recent'}}}));
+    await update({now: fallbackNow, data: fallbackData});
+    assert.equal(await page.locator('[data-forecast-trend]').count(), 6);
+    for (const id of Object.keys(fallbackData)) for (const window of ['five', 'week']) {
+      const line = page.locator('[data-forecast-trend="' + id + '-' + window + '"]');
+      assert.equal(+await line.getAttribute('data-start-value'), fallbackData[id].windows[window].at(-1).value);
+      assert.equal(+await line.getAttribute('data-end-time'), fallbackData[id].forecast[window].eta ?? fallbackData[id].forecast[window].reset);
+    }
+    await page.screenshot({path: path.join(root, 'screenshots/forecast-sparse-history.png')});
+    const correctedRecords = fallbackRecords.concat(Object.keys(fallbackData).map(id => {
+      const row = fallbackRecords.findLast(row => row.provider === id);
+      return {...row, time: fallbackNow + minute, windows: {five: {...row.windows.five, used: 49}, week: {...row.windows.week, used: 49}}};
+    })).sort((a, b) => a.time - b.time);
+    const correctedData = calculate(correctedRecords);
+    await update({now: fallbackNow + minute, data: correctedData});
+    assert.equal(await page.locator('[data-forecast-trend]').count(), 6);
+    const starts = await page.locator('[data-forecast-trend]').evaluateAll(nodes => nodes.map(node => +node.dataset.startValue));
+    assert.deepEqual(starts, Array(6).fill(49));
+    await page.screenshot({path: path.join(root, 'screenshots/forecast-corrected-history.png')});
+    report.cases.push('Codex/Claude/AGY five/week render six future curves from qualified history despite sparse recent coverage or a usage correction; selected recent policies also fall back');
     assert.deepEqual(report.errors, []); report.status = 'PASS';
   } finally {await browser.close(); fs.writeFileSync(path.join(root, 'test-forecast-ui.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));}
 })().catch(error => {console.error(error); process.exitCode = 1;});

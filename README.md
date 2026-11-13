@@ -25,7 +25,7 @@ Codex·Claude Code·Antigravity의 구독 사용량·소진 예측과 확인 가
 CLI로 설치할 수도 있습니다. 파일명은 내려받은 버전에 맞춥니다.
 
 ~~~sh
-code --install-extension ./usage-atlas-0.3.2.vsix
+code --install-extension ./usage-atlas-0.3.3.vsix
 ~~~
 
 기존 로컬 설치와 같은 확장 ID인 local-tools.usage-atlas를 유지합니다. Marketplace 등록은 아직 완료되지 않았으며, 현재 배포 채널은 GitHub Releases입니다.

@@ -63,8 +63,8 @@
     return {...detail, ratePerHour, state: eta < last.reset ? 'predicted' : 'reset-first', eta: eta < last.reset ? eta : null};
   }
   function patternEstimate(points, recent, config, options) {
-    const last = points.at(-1), cutoff = last.time - config.patternDays * day, through = recent.sampleStart ?? last.time - recent.lookbackMs;
-    if (!config.patternDays || !['predicted', 'reset-first', 'inactive'].includes(recent.state) && recent.reason !== 'unobserved-growth' || last.reset - last.time > 7 * day || through <= cutoff) return recent;
+    const last = points.at(-1), cutoff = last.time - config.patternDays * day, through = ['insufficient', 'recovery'].includes(recent.state) && recent.reason !== 'unobserved-growth' ? last.time : recent.sampleStart ?? last.time - recent.lookbackMs;
+    if (!config.patternDays || !['predicted', 'reset-first', 'inactive', 'insufficient', 'recovery'].includes(recent.state) || last.reset - last.time > 7 * day || through <= cutoff) return recent;
     const buckets = Array.from({length: 168}, () => new Map()), slots = options.slots || new Map(), format = formatter(config.timeZone);
     const slot = time => {
       const key = Math.floor(time / quarter);
@@ -118,12 +118,12 @@
     const rates = tiers.map(p => p.rate), tierSlots = {weekday: 0, dayType: 0, hour: 0}, tierMatchedMs = {weekday: 0, dayType: 0, hour: 0};
     for (const p of tiers) if (p.tier) tierSlots[p.tier]++;
     const qualifiedSlots = rates.filter(finite).length;
-    const historicalOnly = options.method === 'historical' || recent.reason === 'unobserved-growth';
+    const historicalOnly = options.method === 'historical' || ['insufficient', 'recovery'].includes(recent.state);
     const pooled = new Map(); for (const bucket of buckets) merge(pooled, bucket);
     const globalRate = rateOf(pooled);
-    if (historicalOnly && recent.reason === 'unobserved-growth' && globalRate === 0) return recent;
+    if (historicalOnly && (recent.netGrowth > 0 || recent.reason === 'unobserved-growth' || recent.state === 'recovery') && globalRate === 0) return recent;
     if (!qualifiedSlots) return recent;
-    // 관측이 없는 시간대는 최근 평균을 유지하고, 충분한 과거 패턴만 절반 반영한다.
+    // 최근 평균이 불완전하면 실제 관측된 과거 패턴만 사용한다. 누락 시간은 휴식이 아니다.
     const trajectory = [{time: last.time, value: last.value}];
     let time = last.time, used = last.value, previousRate, matchedMs = 0;
     while (time < last.reset) {
@@ -150,8 +150,8 @@
     };
   }
   function activityPattern(points, recent, config, options) {
-    const last = points.at(-1), cutoff = last.time - config.patternDays * day, through = recent.sampleStart ?? last.time - recent.lookbackMs;
-    if (!config.patternDays || !['predicted', 'reset-first', 'inactive'].includes(recent.state) && recent.reason !== 'unobserved-growth' || last.reset - last.time > 7 * day || through <= cutoff) return recent;
+    const last = points.at(-1), cutoff = last.time - config.patternDays * day, through = ['insufficient', 'recovery'].includes(recent.state) && recent.reason !== 'unobserved-growth' ? last.time : recent.sampleStart ?? last.time - recent.lookbackMs;
+    if (!config.patternDays || !['predicted', 'reset-first', 'inactive', 'insufficient', 'recovery'].includes(recent.state) || last.reset - last.time > 7 * day || through <= cutoff) return recent;
     const slots = options.slots || new Map(), fmt = formatter(config.timeZone), cells = new Map();
     const slot = time => {
       const key = Math.floor(time / quarter);
@@ -199,7 +199,7 @@
     }
     const qualified = group => group.dates.size >= 2 && group.ms >= hour;
     const currentKnown = recentMs >= quarter * .75, currentRate = currentKnown ? recentUsed / recentMs * hour : recent.ratePerHour;
-    if (!qualified(global) || global.activeMs === 0 && (currentRate > 0 || recent.reason === 'unobserved-growth')) return recent;
+    if (!qualified(global) || global.activeMs === 0 && (currentRate > 0 || recent.netGrowth > 0 || recent.reason === 'unobserved-growth' || recent.state === 'recovery')) return recent;
     const activeRate = global.activeMs ? global.consumed / global.activeMs * hour : 0;
     const aa = global.aa + global.ai ? global.aa / (global.aa + global.ai) : null, ia = global.ia + global.ii ? global.ia / (global.ia + global.ii) : null;
     if (aa === null && currentRate > 0 || ia === null) return recent;
@@ -234,7 +234,7 @@
 
   function estimate(points, window, options = {}) {
     const recent = recentEstimate(points, window, options);
-    if (!points.length || options.method === 'recent' && recent.reason !== 'unobserved-growth') return recent;
+    if (!points.length || options.method === 'recent' && !['insufficient', 'recovery'].includes(recent.state)) return recent;
     return options.method === 'activity' ? activityPattern(points, recent, settings(options), options) : patternEstimate(points, recent, settings(options), options);
   }
   function accountStart(records, id, account, through) {
@@ -308,5 +308,5 @@
     }
     return {known, endKind: status.state === 'predicted' ? 'exhaustion' : 'reset', range, points: raw.map((p, i) => ({...p, y: project(p.value), continuous: i > 0, estimated: true}))};
   }
-  return {settings, estimate, accountStart, provider, present, remaining, summary, curve};
+  return {revision: 2, settings, estimate, accountStart, provider, present, remaining, summary, curve};
 });

@@ -20,9 +20,10 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
   try {
     const page = await browser.newPage({viewport: {width: 1440, height: 900}}); page.on('pageerror', e => report.errors.push(e.message));
     await page.setContent(doc);
-    const update = async value => {await page.evaluate(data => window.dispatchEvent(new MessageEvent('message', {data})), {...model, ...value}); await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));};
+    const paint = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const update = async value => {await page.evaluate(data => window.dispatchEvent(new MessageEvent('message', {data})), {...model, ...value}); await paint();};
     await update({}); assert.equal(await page.locator('[data-forecast]').count(), 4);
-    await page.locator('#ua-nav-pan').focus(); for (let i = 0; i < 5; i++) {await page.keyboard.press('+'); await page.waitForTimeout(20);}
+    await page.locator('#ua-nav-pan').focus(); for (let i = 0; i < 5; i++) {await page.keyboard.press('+'); await paint();}
     const positions = async () => page.locator('[data-forecast]').evaluateAll(nodes => Object.fromEntries(nodes.map(n => [n.dataset.forecast, {x: n.getAttribute('x1'), eta: +n.dataset.time}])));
     const original = await positions();
     assert.equal(await page.locator('[data-forecast-trend]').count(), 4);

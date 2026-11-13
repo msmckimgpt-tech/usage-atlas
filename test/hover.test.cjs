@@ -4,6 +4,21 @@ const {hash, thin} = require('../src/core.cjs');
 const {preview, resetRemaining} = require('../src/hover.cjs');
 const now = Date.now(), hour = 3600000;
 const sample = (ago, value, reset = now + hour, account = 'one') => ({v: 1, provider: 'codex', account: hash(account), time: now - ago * hour, plan: 'test', windows: {five: {used: value, reset}, week: null}});
+
+test('preview names are compact while page names and quota values are preserved', () => {
+  const names = require('../media/provider-visibility.js');
+  for (const label of ['Gemini', 'Claude/GPT', 'Argon']) {
+    const id = 'antigravity-5d72436256ada538';
+    assert.equal(names.previewName(id, label), 'AGY ' + label);
+    assert.equal(names.name(id, label), 'Antigravity · ' + label);
+    const records = [{...sample(.1, 24), provider: id, label}];
+    const result = preview(records, {now});
+    assert.equal(result.summaries.find(row => row.name === 'AGY ' + label).five, '24%');
+    assert.match(result.svg, /AGY /); assert.doesNotMatch(result.svg, /Antigravity/);
+  }
+  assert.equal(names.previewName('antigravity'), 'AGY');
+  assert.equal(names.previewName('codex'), 'Codex'); assert.equal(names.previewName('claude'), 'Claude Code');
+});
 test('hover covers exactly the last five hours without inventing missing usage', () => {
   const p = preview([sample(9, 99), sample(4.9, 20), sample(4.8, 30), sample(0.1, 50)], {now});
   assert.equal(p.start, now - 5 * hour); assert.equal(p.end, now);

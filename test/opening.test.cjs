@@ -53,6 +53,20 @@ async function harness(t, options = {}) {
   const bootstrap = panel => JSON.parse(panel.webview.html.match(/id="ua-initial-data"[^>]*>(.*?)<\/script>/s)[1]);
   return {api, theme: vscode.window.activeColorTheme, commands, replaceStored(value) {records = value;}, open: commands.get('usageAtlas.open'), panels, calls, release, bootstrap, plan, changes, settings, previewOptions, markdowns, appendStored() {records = [...records, {...records[0], time: now + 2, windows: {five: null, week: {used: 33, reset: now + 604800000}}}];}};
 }
+test('preview model cells contain only compact names without collector errors or record-delay text', async t => {
+  const now = Date.now(), message = 'Claude 구독 계정 로그인이 필요합니다.';
+  const records = ['codex', 'claude', 'antigravity-5d72436256ada538'].map(provider => ({v: 1, provider, account: core.hash(provider), plan: 'fixture', time: now - 3600000, ...(provider.startsWith('antigravity-') ? {label: 'Gemini'} : {}), windows: {five: null, week: {used: 42, reset: now + 86400000}}}));
+  const h = await harness(t, {realPreview: true, records, metadata: {collectors: {claude: {message}}}});
+  await h.open();
+  const markdown = h.markdowns.at(-1).value;
+  const cells = [...markdown.matchAll(/<tr><td>(.*?)<\/td>/g)].map(match => match[1]);
+  assert.deepEqual(cells, ['Codex', 'Claude Code', 'AGY Gemini']);
+  assert.doesNotMatch(markdown, /구독 계정|기록 지연|기록지연|<small>/);
+  assert.equal(h.api.snapshot().data.claude.status.message, message);
+  assert.equal(h.api.snapshot().data.claude.last.windows.week.used, 42);
+  assert.equal(h.calls.length, 0);
+});
+
 test('independent decimal settings enter the snapshot and invalidate the preview cache immediately', async t => {
   const h = await harness(t);
   h.settings.codexCreditDecimals = 2; h.settings.claudeUsdDecimals = 6;

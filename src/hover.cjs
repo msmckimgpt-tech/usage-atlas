@@ -35,7 +35,7 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
   const history = records.filter(r => r.time <= now);
   const convert = converter(conversion), bill = billing.enricher();
   const projected = projection || project(history, capacities, maxGap, (...args) => {convert(...args); bill(...args);});
-  const providers = Object.keys(projected).filter(id => providerCatalog.enabled(id, projected[id], visibility)), names = Object.fromEntries(providers.map(id => [id, providerCatalog.name(id, projected[id]?.last?.label)]));
+  const providers = Object.keys(projected).filter(id => providerCatalog.enabled(id, projected[id], visibility)), names = Object.fromEntries(providers.map(id => [id, providerCatalog.previewName(id, projected[id]?.last?.label)]));
   const legendRows = providers.length > 2 ? providers.length : 1, top = 28 + (legendRows - 1) * 16, height = 192 + (legendRows - 1) * 16;
   const quotas = providers.flatMap(id => ['five', 'week'].flatMap(w => chartGraphs.quota(projected[id], id, w))).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const credits = providers.flatMap(id => creditGraphs.series(projected[id], id, {creditBasis})).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));

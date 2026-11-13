@@ -387,7 +387,9 @@ exports.run = async () => {
     assert.equal(await frame.locator('#ua-details-filters').isVisible(), false);
     await frame.locator('#ua-details-close').click();
     await workbench.mouse.move(10, 10); await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible'});
-    assert.match(await forecastHover.textContent(), /Antigravity.*Gemini/); assert.equal(await forecastHover.locator('tbody tr').count(), 3);
+    assert.match(await forecastHover.textContent(), /AGY Gemini/); assert.equal(await forecastHover.locator('tbody tr').count(), 3);
+    assert.deepEqual(await forecastHover.locator('tbody tr td:first-child').allTextContents(), ['Codex', 'Claude Code', 'AGY Gemini']);
+    assert.equal(await forecastHover.locator('tbody small').count(), 0);
     await forecastImage.evaluate(n => n.decode()); assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360);
     await forecastHover.screenshot({path: path.join(root, 'screenshots/antigravity-preview-native.png')});
     await workbench.mouse.move(10, 10);

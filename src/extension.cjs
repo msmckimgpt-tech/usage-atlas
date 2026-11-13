@@ -125,9 +125,8 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     md.appendMarkdown(`![Usage Atlas · 최근 5시간](data:image/svg+xml;base64,${Buffer.from(title).toString('base64')}) [$(gear)](command:usageAtlas.settings "Usage Atlas 설정")\n\n`);
     md.appendMarkdown(`![AI 서비스별 최근 5시간 사용률](data:image/svg+xml;base64,${Buffer.from(p.svg).toString('base64')})\n\n`);
     md.appendMarkdown('<table width="360"><thead><tr><th width="100" align="left"></th><th width="130" align="right">5시간</th><th width="130" align="right">주간</th></tr></thead><tbody>');
-    // 수집 중지·오류·기록 지연처럼 정상이 아닌 상태는 이름 아래에 함께 표시해 이전 값이 최신처럼 보이지 않게 한다.
     const escapeHtml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    for (const s of p.summaries) md.appendMarkdown(`<tr><td>${escapeHtml(s.name)}${s.status && s.status !== '정상' ? '<br/><small>' + escapeHtml(s.status) + '</small>' : ''}</td>${['five', 'week'].map(w => `<td align="right">${s[w] === '-' ? '-' : `${s[w]} (${s.resets[w]})${key.forecastEnabled ? '<br/>' + (s.forecasts?.[w]?.label || '예상') + ' ' + (s.forecasts?.[w]?.text || '-') : ''}`}</td>`).join('')}</tr>`);
+    for (const s of p.summaries) md.appendMarkdown(`<tr><td>${escapeHtml(s.name)}</td>${['five', 'week'].map(w => `<td align="right">${s[w] === '-' ? '-' : `${s[w]} (${s.resets[w]})${key.forecastEnabled ? '<br/>' + (s.forecasts?.[w]?.label || '예상') + ' ' + (s.forecasts?.[w]?.text || '-') : ''}`}</td>`).join('')}</tr>`);
     md.appendMarkdown('</tbody></table>\n\n');
     status.tooltip = md;
     status.accessibilityInformation = {label: `Usage Atlas. 최근 5시간 사용량. ${p.summaries.map(s => `${s.name}${s.status && s.status !== '정상' ? ' (' + s.status + ')' : ''} 5시간 ${s.five}, 주간 ${s.week}`).join('. ')}. 클릭하여 상세 차트 열기`};

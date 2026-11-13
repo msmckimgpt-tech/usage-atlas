@@ -24,6 +24,7 @@
     return ['codex', 'claude', ...groups];
   }
   function name(id, label) {return id === 'codex' ? 'Codex' : id === 'claude' ? 'Claude Code' : 'Antigravity' + (label ? ' · ' + label : '');}
+  function previewName(id, label) {return isAntigravity(id) || id === 'antigravity' ? 'AGY' + (label ? ' ' + label : '') : name(id, label);}
   function color(id, dark = true) {
     if (id === 'codex') return dark ? '#62d0d8' : '#087a86';
     if (id === 'claude') return dark ? '#eeb18c' : '#b05428';
@@ -53,5 +54,5 @@
     const key = groupSettings[id] || ({Gemini: 'showAntigravityGemini', 'Claude/GPT': 'showAntigravityClaudeGpt', Argon: 'showAntigravityArgon'}[label]);
     return !key || options[key] !== false;
   }
-  return {visible, toggle, restore, valid, isAntigravity, ids, name, color, displaySettings, settings, enabled};
+  return {visible, toggle, restore, valid, isAntigravity, ids, name, previewName, color, displaySettings, settings, enabled};
 });

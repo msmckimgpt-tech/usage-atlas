@@ -49,8 +49,8 @@ test('new group snapshots round trip without secrets, isolate accounts and prese
   assert.equal(data[id].windows.five.at(-1).delta, 5); assert.equal(data[id].ledgerAvailable, false);
   const chart = require('../media/chart-series.js');
   assert.equal(chart.quota(data[id], id, 'five', {credit: true, creditMode: 'estimate'})[0].points.at(-1).y, 25);
-  const svg = preview(restored, {now, projection: data}); assert.equal(svg.summaries.length, 5); assert.equal(svg.summaries.find(s => s.name === 'Antigravity · Gemini').five, '25%');
-  assert.match(svg.svg, /Antigravity · Gemini/); assert.match(svg.svg, new RegExp('data-series="' + id + '-five"'));
+  const svg = preview(restored, {now, projection: data}); assert.equal(svg.summaries.length, 5); assert.equal(svg.summaries.find(s => s.name === 'AGY Gemini').five, '25%');
+  assert.match(svg.svg, /AGY Gemini/); assert.match(svg.svg, new RegExp('data-series="' + id + '-five"'));
   assert.doesNotMatch(await fs.readFile(path.join(dir, 'history.jsonl'), 'utf8'), /email|Token|apiKey|profilePicture/);
   const report = analyze({provider: id, account: account.account, window: 'five', start: now - 120000, end: now + 1, cursorTime: now, records: restored});
   assert.equal(report.summary.callCount, null); assert.equal(report.quotaOnly, true); assert.equal(report.observations.items[0].used, 25); assert.ok(report.coverage.notes.some(n => n.includes('Antigravity')));

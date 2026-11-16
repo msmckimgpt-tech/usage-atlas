@@ -286,6 +286,22 @@ test('automatic cache powers first open, ignores legacy arbitrary rates and reje
   assert.equal(h.calls.length, 0);
 });
 
+test('retention head trimming preserves calibrated credits in page and preview without allowing changed source contents', async t => {
+  const {buildConversion} = require('../src/credit-conversion.cjs');
+  const base = Date.now() - 600000, account = core.hash('trimmed-cache');
+  const records = Array.from({length: 6}, (_, i) => ({v: 1, provider: 'codex', account, plan: 'pro', time: base + i * 60000, creditBalance: 1000 - Math.max(0, i - 1) * 100, windows: {five: null, week: {used: i ? 2 : 0, reset: base + 604800000}}}));
+  const calls = [{id: 'calibration', provider: 'codex', account, homeKey: 'fixture', time: base + 59000, startedAt: base + 1000, completedAt: base + 59000, completionState: 'completed', model: 'gpt-6.1-sol', mode: 'Standard', input: 1000000, cached: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0}];
+  const automatic = buildConversion({records, calls}), h = await harness(t, {records, automatic});
+  await h.open();
+  h.replaceStored(records.slice(2)); await h.open();
+  const page = h.api.snapshot().data.codex.windows.week.at(-1).creditEstimate.nativeUsage;
+  assert.ok(page > 0); assert.equal(h.previewOptions.at(-1).projection.codex.windows.week.at(-1).creditEstimate.nativeUsage, page);
+  assert.equal(h.api.snapshot().data.codex.windows.five.at(-1).creditEstimate.nativeUsage, null);
+  h.replaceStored(records.slice(2).map((r, i) => i === 1 ? {...r, creditBalance: 799} : r)); await h.open();
+  assert.equal(h.api.snapshot().data.codex.windows.week.at(-1).creditEstimate.nativeUsage, null);
+  assert.equal(h.calls.length, 0);
+});
+
 test('page color mode immediately controls preview image palette regardless of editor theme', async t => {
   const h = await harness(t, {settings: {colorMode: 'light'}}); await h.open();
   assert.equal(h.api.snapshot().colorMode, 'light'); assert.equal(h.previewOptions.at(-1).dark, false);

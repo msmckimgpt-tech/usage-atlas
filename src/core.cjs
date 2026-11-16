@@ -203,7 +203,7 @@ function creditModes(records, provider, maxGap = 1800000) {
 class ProjectionStream {
   constructor(heads, capacities = [], maxGap = 1800000, enrich) {
     this.capacities = capacities; this.maxGap = maxGap; this.enrich = enrich; this.nodes = new Map();
-    for (const id of catalog.ids(heads)) this.nodes.set(id, {account: heads.findLast(r => r.provider === id)?.account, windows: {five: [], week: []}, transitions: {five: {}, week: {}}, quota: {five: {}, week: {}}, credit: {}, ledgerState: {}, ledger: [], events: [], changes: new Map(), eventCount: 0, ledgerAvailable: false, creditTotal: 0});
+    for (const id of catalog.ids(heads)) this.nodes.set(id, {account: heads.findLast(r => r.provider === id)?.account, windows: {five: new ChartSamples(2000), week: new ChartSamples(2000)}, transitions: {five: {}, week: {}}, quota: {five: {}, week: {}}, credit: {}, ledgerState: {}, ledger: new ChartSamples(1500), events: new ChartSamples(2000), changes: new Map(), eventCount: 0, ledgerAvailable: false, creditTotal: 0});
   }
   accept(records) {
     const groups = new Map(), boundaries = new Map();
@@ -221,20 +221,83 @@ class ProjectionStream {
       const windows = Object.fromEntries(['five', 'week'].map(w => [w, attach(quotaSeries(mine, w, this.capacities, this.maxGap, transitions[w], boundaries.get(id), node.quota[w]))]));
       attach(ledger.points); this.enrich?.(id, mine, windows, ledger.points);
       for (const w of ['five', 'week']) {
-        node.windows[w] = thin(node.windows[w].concat(windows[w]), 2000);
-        for (const e of transitions[w].filter(Boolean)) {const event = {...e, window: w}; node.events.push({...event, value: Math.abs(e.before - e.after)}); node.eventCount++; if (e.kind === 'schedule-change') node.changes.set(w, event);}
+        node.windows[w].append(windows[w]);
       }
-      node.events = thin(node.events.sort((a, b) => a.time - b.time), 2000);
-      node.ledger = thin(node.ledger.concat(ledger.points), 1500); node.ledgerAvailable ||= ledger.available; node.creditTotal = ledger.total;
+      const events = ['five', 'week'].flatMap(w => transitions[w].filter(Boolean).map(e => ({...e, window: w, value: Math.abs(e.before - e.after)}))).sort((a, b) => a.time - b.time);
+      for (const event of events) {node.eventCount++; if (event.kind === 'schedule-change') node.changes.set(event.window, event);}
+      node.events.append(events);
+      node.ledger.append(ledger.points); node.ledgerAvailable ||= ledger.available; node.creditTotal = ledger.total;
       node.first ??= mine[0].time; node.last = mine.at(-1);
     }
   }
   data() {
     return Object.fromEntries([...this.nodes].map(([id, n]) => {
-      const events = new Map(thin(n.events, 2000).map(e => [e.window + '/' + e.time + '/' + e.kind, e]));
+      const events = new Map(n.events.points().map(e => [e.window + '/' + e.time + '/' + e.kind, e]));
       for (const e of n.changes.values()) events.set(e.window + '/' + e.time + '/' + e.kind, e);
-      return [id, {last: n.last, first: n.first, events: [...events.values()].sort((a, b) => a.time - b.time).map(({value, continuous, ...e}) => e), eventCount: n.eventCount, windows: Object.fromEntries(['five', 'week'].map(w => [w, thin(n.windows[w], 2000)])), ledger: thin(n.ledger, 1500), ledgerUnit: id === 'codex' ? 'credits' : 'USD', ledgerAvailable: n.ledgerAvailable, creditTotal: n.creditTotal}];
+      return [id, {last: n.last, first: n.first, events: [...events.values()].sort((a, b) => a.time - b.time).map(({value, continuous, ...e}) => e), eventCount: n.eventCount, windows: Object.fromEntries(['five', 'week'].map(w => [w, n.windows[w].points()])), ledger: n.ledger.points(), ledgerUnit: id === 'codex' ? 'credits' : 'USD', ledgerAvailable: n.ledgerAvailable, creditTotal: n.creditTotal}];
     }));
+  }
+}
+const sampleFields = ['value', 'amount', 'delta', 'cumulative', 'nativeCumulative', 'credit.usage', 'credit.delta', 'credit.total', 'billing.usage', 'billing.delta', 'billing.total', ...['usage', 'delta', 'total', 'nativeUsage', 'nativeDelta', 'nativeTotal'].map(key => 'creditEstimate.' + key)].map(key => key.split('.'));
+const sampleFlags = ['continuous', 'totalContinuous', ...['credit', 'billing'].flatMap(key => ['usageContinuous', 'deltaContinuous', 'totalContinuous'].map(flag => key + '.' + flag)), ...['usageContinuous', 'deltaContinuous', 'totalContinuous', 'nativeUsageContinuous', 'nativeDeltaContinuous', 'nativeTotalContinuous'].map(flag => 'creditEstimate.' + flag)].map(key => key.split('.'));
+const sampleValue = (point, parts) => parts.length === 1 ? point[parts[0]] : point[parts[0]]?.[parts[1]];
+// 원본 순번의 고정 버킷을 합쳐 압축한다. 이미 줄인 배열을 다시 등분하면 오래된 소비 구간이 소실된다.
+class ChartSamples {
+  constructor(budget) {this.budget = budget; this.count = 0; this.width = 1; this.raw = []; this.buckets = new Map(); this.breaks = sampleFlags.map(() => 0);}
+  members(bucket) {
+    return [...new Set([bucket.first, bucket.last, ...bucket.min, ...bucket.max, bucket.firstReset, bucket.lastReset, bucket.firstReset?.before, bucket.lastReset?.before].filter(Boolean))];
+  }
+  add(sample) {
+    const key = Math.floor(sample.index / this.width), old = this.buckets.get(key);
+    if (!old) {this.buckets.set(key, {first: sample, last: sample, min: sampleFields.map(() => sample), max: sampleFields.map(() => sample), ...(isReset(sample.point.event) ? {firstReset: sample, lastReset: sample} : {})}); return;}
+    if (sample.index < old.first.index) old.first = sample;
+    if (sample.index > old.last.index) old.last = sample;
+    for (let i = 0; i < sampleFields.length; i++) {
+      const value = sampleValue(sample.point, sampleFields[i]) ?? 0;
+      const min = sampleValue(old.min[i].point, sampleFields[i]) ?? 0, max = sampleValue(old.max[i].point, sampleFields[i]) ?? 0;
+      if (value < min || value === min && sample.index < old.min[i].index) old.min[i] = sample;
+      if (value > max || value === max && sample.index < old.max[i].index) old.max[i] = sample;
+    }
+    if (isReset(sample.point.event)) {
+      if (!old.firstReset || sample.index < old.firstReset.index) old.firstReset = sample;
+      if (!old.lastReset || sample.index > old.lastReset.index) old.lastReset = sample;
+    }
+  }
+  selected() {
+    const members = new Map();
+    for (const bucket of this.buckets.values()) for (const sample of this.members(bucket)) if (!members.has(sample.index) || sample.before) members.set(sample.index, sample);
+    return [...members.values()].sort((a, b) => a.index - b.index);
+  }
+  append(points) {
+    if (!points.length) return;
+    for (const point of points) {
+      for (let i = 0; i < sampleFlags.length; i++) if (!sampleValue(point, sampleFlags[i])) this.breaks[i]++;
+      const sample = {point, index: this.count++, breaks: [...this.breaks]};
+      if (isReset(point.event) && this.previousValue?.point.time === point.event.fromTime) {const {point, index, breaks} = this.previousValue; sample.before = {point, index, breaks};}
+      if (number(point.value)) this.previousValue = sample;
+      if (this.raw) this.raw.push(sample); else this.add(sample);
+    }
+    if (this.raw && this.raw.length <= this.budget) return;
+    if (this.raw) {for (const sample of this.raw) this.add(sample); this.raw = null;}
+    let selected = this.selected();
+    while (selected.length > this.budget) {
+      this.width *= 2; this.buckets.clear();
+      for (const sample of selected) this.add(sample);
+      selected = this.selected();
+    }
+  }
+  points() {
+    if (this.raw) return this.raw.map(sample => sample.point);
+    const selected = this.selected();
+    return selected.map((sample, index) => {
+      const point = {...sample.point};
+      for (const key of ['credit', 'billing', 'creditEstimate']) if (point[key]) point[key] = {...point[key]};
+      for (let i = 0; i < sampleFlags.length; i++) {
+        const parts = sampleFlags[i], target = parts.length === 1 ? point : point[parts[0]], key = parts.at(-1);
+        if (target && (key in target || parts.length === 1 && key === 'continuous')) target[key] = index > 0 && sample.breaks[i] === selected[index - 1].breaks[i];
+      }
+      return point;
+    });
   }
 }
 class Store {

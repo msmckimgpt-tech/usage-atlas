@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {project, hash} = require('../src/core.cjs');
 const {priceCall, creditCall} = require('../src/pricing.cjs');
-const {buildConversion, converter, callConverter, validConversion, scopeKey, sourceKey} = require('../src/credit-conversion.cjs');
+const {buildConversion, converter, callConverter, validConversion, scopeKey, sourceKey, matchesConversionSource} = require('../src/credit-conversion.cjs');
 const {analyze} = require('../src/analytics.cjs');
 const base = Date.now() - 600000, minute = 60000;
 const account = hash('conversion-fixture');
@@ -18,6 +18,25 @@ function fixture(extra = {}) {
   return {records: [record(0, 0, 0), record(1, 10, 2), record(2, 10, 2, 900)], calls: [call('included', 1), call('paid', 2, 'Fast')], capacities: ['five', 'week'].map(window => ({provider: 'codex', account, plan: 'pro', time: base, window, mult: 5})), now: base + 3 * minute, ...extra};
 }
 function projected(options) {const model = buildConversion(options); return {model, data: project(options.records, options.capacities, undefined, converter(model))};}
+
+test('calibration verifies every surviving source row after head trimming and rejects edits, holes, reordering and scope changes', () => {
+  const options = fixture();
+  options.records.push(record(3, 10, 2, 850), record(4, 10, 2, 800));
+  options.now = base + 6 * minute;
+  const model = buildConversion(options), match = rows => matchesConversionSource(model, rows, options.capacities);
+  const cropped = options.records.slice(2), appended = [...cropped, record(5, 10, 2, 750)];
+  assert.equal(match(options.records), true); assert.equal(match(cropped), true); assert.equal(match(appended), true);
+  for (const rows of [cropped.map((r, i) => i === 1 ? {...r, creditBalance: 799} : r), [cropped[0], cropped[2]], [cropped[1], cropped[0], cropped[2]], cropped.slice(0, -1), [record(6, 10, 2, 700)]]) assert.equal(match(rows), false);
+  assert.equal(matchesConversionSource(model, cropped, options.capacities.map(c => ({...c, mult: 20}))), false);
+  assert.equal(validConversion({...model, sourceProof: {...model.sourceProof, rows: 'broken'}}, model.scopeKey), false);
+  const legacy = {...model}; delete legacy.sourceProof;
+  assert.equal(matchesConversionSource(legacy, options.records, options.capacities), true);
+  assert.equal(matchesConversionSource(legacy, cropped, options.capacities), false);
+  assert.equal(validConversion(model, model.scopeKey), true);
+  const sameTime = [options.records[0], {...options.records[1], time: options.records[0].time}, ...options.records.slice(2)];
+  const sharedTimeModel = buildConversion({...options, records: sameTime});
+  assert.equal(matchesConversionSource(sharedTimeModel, sameTime.slice(1), options.capacities), true);
+});
 test('official credit rates distinguish Standard, Fast and Ultrafast from subscription consumption', () => {
   for (const [mode, paid, included] of [['Standard', 50, 50], ['Fast', 100, 125], ['Ultrafast', 300, 400]]) {
     const result = creditCall(call('x', 1, mode)); near(result.purchasedCredits, paid); near(result.subscriptionCredits, included); assert.equal(result.creditIssue, null);

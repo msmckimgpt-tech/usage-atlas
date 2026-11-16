@@ -5,9 +5,10 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const {HistoryArchive} = require('../src/history-archive.cjs');
-const {project, ProjectionStream, hash, Store, series} = require('../src/core.cjs');
+const {project, ProjectionStream, hash, Store, series, creditModes} = require('../src/core.cjs');
 const {converter} = require('../src/credit-conversion.cjs');
 const billing = require('../src/billing.cjs');
+const creditGraphs = require('../media/credit-series.js');
 const now = Date.now(), minute = 60000, day = 86400000;
 function records() {
   return ['codex', 'claude', 'antigravity-5d72436256ada538'].flatMap(provider => Array.from({length: 41}, (_, i) => {
@@ -33,6 +34,40 @@ test('streamed quotas, credits and billing match full projection across single-r
     for (let i = 0; i < source.length; i += size) stream.accept(source.slice(i, i + size));
     assert.deepEqual(stream.data(), expected, 'batch size ' + size);
   }
+});
+test('long archives preserve early credit consumption, bounded samples and exact values through cached appends and reopen', async t => {
+  const {archive} = await fixture(t), length = 14000, start = now - (length + 1) * minute;
+  const source = ['codex', 'claude'].flatMap(provider => Array.from({length}, (_, i) => ({v: 1, provider, account: hash(provider), source: 'import', plan: 'pro', time: start + i * minute, windows: {five: {used: i % 300 / 3, reset: start + (Math.floor(i / 300) + 1) * 300 * minute}, week: {used: i % 10080 / 101, reset: start + (Math.floor(i / 10080) + 1) * 10080 * minute}}, ...(provider === 'codex' ? {creditBalance: 100000 - Math.min(i, 3000) * 2} : {spentUsd: Math.min(i, 3000) / 100, spendPeriod: '2026-11'})}))).sort((a, b) => a.time - b.time || a.provider.localeCompare(b.provider));
+  const before = JSON.stringify(source), heads = ['codex', 'claude'].map(id => source.findLast(r => r.provider === id));
+  const conversion = {cohorts: heads.flatMap(row => ['five', 'week'].map(window => ({id: JSON.stringify([row.provider, row.account, row.plan, null, window]), unitsPerPercent: 10}))), paidThrough: {codex: {account: hash('codex'), time: start - 1}}};
+  const originals = Object.fromEntries(heads.map(row => [row.provider, new Map(creditModes(source, row.provider).map(p => [p.time, p]))]));
+  const check = data => {
+    for (const id of ['codex', 'claude']) {
+      const provider = data[id]; assert.ok(provider.ledger.length <= 1500);
+      const expectedTotal = id === 'codex' ? 6000 : 30;
+      assert.ok(Math.abs(provider.creditTotal - expectedTotal) < 1e-8);
+      for (const window of ['five', 'week']) {assert.ok(provider.windows[window].length <= 2000); for (const point of provider.windows[window]) assert.deepEqual(point.credit.usage, originals[id].get(point.time).credit.usage);}
+      for (const mode of ['usage', 'delta', 'total']) {
+        const line = creditGraphs.series(provider, id, {mode}).find(s => s.creditWindow === 'week');
+        const bins = new Set(line.points.filter(p => p.amount > 0 && p.time < start + 3000 * minute).map(p => Math.floor((p.time - start) / (360 * minute))));
+        assert.equal(bins.size, 9, id + ' ' + mode + ' must retain every early consumption interval');
+        for (const point of line.points) if (Number.isFinite(point.y)) assert.ok(Math.abs(point.y - point.amount / 10) < 1e-8, id + ' ' + mode + ' calibration stays aligned');
+      }
+    }
+  };
+  for (const size of [137, 1024]) {
+    const convert = converter(conversion, {states: new Map(), assumeStandard: true}), bill = billing.enricher(billing.catalog, new Map());
+    const stream = new ProjectionStream(heads, [], undefined, (...args) => {convert(...args); bill(...args);});
+    for (let i = 0; i < source.length; i += size) stream.accept(source.slice(i, i + size));
+    check(stream.data());
+  }
+  await archive.append(source.slice(0, -2));
+  const query = {from: start - 1, capacities: [], conversion, maxGap: 1800000};
+  await archive.query(query); await archive.append(source.slice(-2));
+  const cold = await archive.query(query); check(cold.data);
+  assert.deepEqual((await archive.query(query)).data, cold.data);
+  await archive.release(); check((await archive.query(query)).data);
+  assert.equal(JSON.stringify(source), before);
 });
 test('archive seeds existing originals, deduplicates writes and matches the core projection without changing the hot file', async t => {
   const {dir, archive} = await fixture(t), source = records();

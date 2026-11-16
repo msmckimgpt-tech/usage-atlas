@@ -19,6 +19,29 @@ function sourceKey(records, capacities = [], exclusions = []) {
   return value.digest('hex');
 }
 function scopeKey(capacities = [], exclusions = []) {return hash([catalog.version, TIMING, 'Standard', PAID_RATIO_POLICY, capacities, exclusions]);}
+function sourceProof(records) {
+  const bytes = Buffer.alloc(records.length * 32);
+  for (let i = 0; i < records.length; i++) crypto.createHash('sha256').update(JSON.stringify(records[i])).digest().copy(bytes, i * 32);
+  return {first: records[0]?.time ?? null, last: records.at(-1)?.time ?? null, rows: bytes.toString('base64')};
+}
+function validProof(proof, count) {
+  return proof && (count === 0 ? proof.first === null && proof.last === null : finite(proof.first) && finite(proof.last) && proof.first <= proof.last) && typeof proof.rows === 'string' && proof.rows.length === 4 * Math.ceil(count * 32 / 3) && Buffer.from(proof.rows, 'base64').length === count * 32;
+}
+function matchesConversionSource(model, records, capacities = [], exclusions = []) {
+  if (model.scopeKey !== scopeKey(capacities, exclusions)) return false;
+  const proof = model.sourceProof;
+  if ((!proof || records[0]?.time <= proof.first) && model.recordCount <= records.length && sourceKey(records.slice(0, model.recordCount), capacities, exclusions) === model.inputKey) return true;
+  if (!validProof(proof, model.recordCount) || !records.length || records[0].time < proof.first || records[0].time > proof.last) return false;
+  const bytes = Buffer.from(proof.rows, 'base64'), first = crypto.createHash('sha256').update(JSON.stringify(records[0])).digest();
+  let offset = bytes.indexOf(first);
+  while (offset >= 0 && offset % 32) offset = bytes.indexOf(first, offset + 1);
+  if (offset < 0) return false;
+  const overlap = model.recordCount - offset / 32;
+  if (records.length < overlap || records.slice(overlap).some(row => row.time < proof.last)) return false;
+  // 보관 한도로 앞부분이 빠져도 남아 있는 모든 학습 원본의 내용을 검증한다.
+  for (let i = 0; i < overlap; i++) if (!crypto.createHash('sha256').update(JSON.stringify(records[i])).digest().equals(bytes.subarray(offset + i * 32, offset + (i + 1) * 32))) return false;
+  return true;
+}
 function currentRecords(records, provider) {
   const rows = records.filter(row => row.provider === provider).sort((a, b) => a.time - b.time);
   const account = rows.at(-1)?.account;
@@ -142,12 +165,13 @@ function buildConversion({records = [], capacities = [], calls = [], exclusions 
       if (positive(included) && positive(paid)) debitWeights.push([interval.id, included / paid]);
     }
   }
-  return {schema: 5, paidThrough, timingPolicy: TIMING, ratioOnlyDebitCount, assumedDebitCount, assumedMode: 'Standard', catalogVersion: catalog.version, scopeKey: scopeKey(capacities, exclusions), measuredAt: now, revision, inputKey: sourceKey(records, capacities, exclusions), recordCount: records.length, cohorts, debitWeights};
+  return {schema: 5, paidThrough, timingPolicy: TIMING, ratioOnlyDebitCount, assumedDebitCount, assumedMode: 'Standard', catalogVersion: catalog.version, scopeKey: scopeKey(capacities, exclusions), measuredAt: now, revision, inputKey: sourceKey(records, capacities, exclusions), recordCount: records.length, sourceProof: sourceProof(records), cohorts, debitWeights};
 }
 function validConversion(value, key) {
   return value?.schema === 5 && !!value.paidThrough && typeof value.paidThrough === 'object' && !Array.isArray(value.paidThrough) && Object.entries(value.paidThrough).every(([provider, row]) => provider === 'codex' && /^[a-f0-9]{20}$/.test(row?.account || '') && finite(row?.time) && row.time >= 0 && row.time <= value.measuredAt) && value.timingPolicy === TIMING && Number.isSafeInteger(value.ratioOnlyDebitCount) && value.ratioOnlyDebitCount >= 0 && value.ratioOnlyDebitCount <= 120000 && Number.isSafeInteger(value.assumedDebitCount) && value.assumedDebitCount >= 0 && value.assumedDebitCount <= 120000 && value.assumedMode === 'Standard' && finite(value.measuredAt) && Number.isSafeInteger(value.recordCount) && value.recordCount >= 0 && value.recordCount <= 120000 && /^[a-f0-9]{64}$/.test(value.inputKey || '') && value.catalogVersion === catalog.version && value.scopeKey === key
     && Array.isArray(value.cohorts) && value.cohorts.length <= 240000 && value.cohorts.every(row => row && ['codex', 'claude'].includes(row.provider) && ['five', 'week'].includes(row.window) && typeof row.id === 'string' && row.id === cohortKey(row.provider, row.account, row.plan, row.mult, row.window) && positive(row.unitsPerPercent) && (row.mult === null || positive(row.mult)))
-    && Array.isArray(value.debitWeights) && value.debitWeights.length <= 120000 && value.debitWeights.every(row => Array.isArray(row) && row.length === 2 && /^[a-f0-9]{64}$/.test(row[0]) && positive(row[1]) && row[1] <= 16);
+    && Array.isArray(value.debitWeights) && value.debitWeights.length <= 120000 && value.debitWeights.every(row => Array.isArray(row) && row.length === 2 && /^[a-f0-9]{64}$/.test(row[0]) && positive(row[1]) && row[1] <= 16)
+    && (value.sourceProof === undefined || validProof(value.sourceProof, value.recordCount));
 }
 function converter(model, options = {}) {
   const cohorts = new Map((model?.cohorts || []).map(row => [row.id, row]));
@@ -234,4 +258,4 @@ function callConverter(model, records, capacities, window) {
     return result;
   };
 }
-module.exports = {buildConversion, converter, callConverter, validConversion, scopeKey, sourceKey};
+module.exports = {buildConversion, converter, callConverter, validConversion, scopeKey, sourceKey, matchesConversionSource};

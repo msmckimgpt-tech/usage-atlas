@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
-const {converter, validConversion, scopeKey, sourceKey} = require('./credit-conversion.cjs');
+const {converter, validConversion, scopeKey, sourceKey, matchesConversionSource} = require('./credit-conversion.cjs');
 const {Store, project, sanitize} = require('./core.cjs');
 const {preview} = require('./hover.cjs');
 const forecasts = require('../media/forecast.js');
@@ -97,10 +97,9 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     const enabled = cfg().get('analysisEnabled', true), key = scopeKey(metadata.capacities, metadata.exclusions || []);
     if (usableConversion?.records === records && usableConversion.model === automatic && usableConversion.key === key && usableConversion.enabled === enabled) return usableConversion.value;
     let value = null;
-    if (enabled && validConversion(automatic, key) && Number.isInteger(automatic.recordCount) && automatic.recordCount >= 0 && automatic.recordCount <= records.length) {
+    if (enabled && validConversion(automatic, key)) {
       const sameFile = typeof store.cachedStamp === 'string' && automatic.historyStamp === store.cachedStamp && automatic.recordCount === records.length;
-      const prefix = sameFile ? automatic.inputKey : automatic.recordCount === records.length ? inputKey() : sourceKey(records.slice(0, automatic.recordCount), metadata.capacities, metadata.exclusions || []);
-      if (prefix === automatic.inputKey) value = automatic;
+      if (sameFile || matchesConversionSource(automatic, records, metadata.capacities, metadata.exclusions || [])) value = automatic;
     }
     usableConversion = {records, model: automatic, key, enabled, value}; return value;
   }
@@ -265,8 +264,9 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         const previous = analysisData.activity || {};
         analysisData = await diagnostics.measure('shared', 'session-index', () => sessionIndex.scan({codexHome: process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), claudeDir: cfg().get('claudeConfigDir') || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), accounts: Object.fromEntries(['codex', 'claude'].map(id => [id, latest(id)?.account])), signal: controller.signal}));
         const sameScope = validConversion(automatic, scopeKey(metadata.capacities, metadata.exclusions || []));
-        const due = !sameScope || !currentConversion() || Date.now() - automatic.measuredAt >= 60000;
-        if (due && (automatic?.inputKey !== inputKey() || automatic?.revision !== analysisData.revision || !sameScope)) {
+        const upgradeProof = !automatic?.sourceProof;
+        const due = upgradeProof || !sameScope || !currentConversion() || Date.now() - automatic.measuredAt >= 60000;
+        if (due && (upgradeProof || automatic?.inputKey !== inputKey() || automatic?.revision !== analysisData.revision || !sameScope)) {
           const value = await diagnostics.measure('shared', 'conversion', () => queryAnalysis({operation: 'conversion', records, calls: analysisData.calls, capacities: metadata.capacities, exclusions: metadata.exclusions || [], revision: analysisData.revision, now: Date.now()}, {signal: controller.signal}));
           value.historyStamp = typeof store.cachedStamp === 'string' ? store.cachedStamp : null;
           const temporary = automaticFile + '.' + process.pid + '.tmp';

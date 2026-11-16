@@ -39,7 +39,7 @@ async function harness(t, options = {}) {
       }
     }
   };
-  class Store {constructor() {this.dir = dir;} async read() {return records;} async withLock(fn) {return fn();} async commit(additions) {records = [...records, ...additions].sort((a, b) => a.time - b.time); return records;}}
+  class Store {constructor() {this.dir = dir; this.archive = optionsHarness.archive;} async read() {return records;} async withLock(fn) {return fn();} async commit(additions) {records = [...records, ...additions].sort((a, b) => a.time - b.time); return records;}}
   const localRequire = createRequire(path.join(root, 'src', 'extension.cjs'));
   const requireMock = name => name === 'vscode' ? vscode : name === './core.cjs' ? {...core, Store} : name === './adapters.cjs' ? adapters : name === './antigravity.cjs' && options.antigravity ? {dataDir: value => value, dispose() {}, collect: async (...args) => {calls.push('antigravity'); return options.antigravity(...args);}} : name === './hover.cjs' ? {preview: (records, options) => {previewOptions.push(options); return optionsHarness.realPreview ? localRequire('./hover.cjs').preview(records, options) : {svg: '<svg/>', summaries: []};}} : localRequire(name);
   const mod = {exports: {}};
@@ -53,6 +53,35 @@ async function harness(t, options = {}) {
   const bootstrap = panel => JSON.parse(panel.webview.html.match(/id="ua-initial-data"[^>]*>(.*?)<\/script>/s)[1]);
   return {api, theme: vscode.window.activeColorTheme, commands, replaceStored(value) {records = value;}, open: commands.get('usageAtlas.open'), panels, calls, release, bootstrap, plan, changes, settings, previewOptions, markdowns, appendStored() {records = [...records, {...records[0], time: now + 2, windows: {five: null, week: {used: 33, reset: now + 604800000}}}];}};
 }
+test('an in-flight historical read cannot block a new collection or accumulate parallel view reads', async t => {
+  let finishHistory; const gate = new Promise(resolve => {finishHistory = resolve;}); let queries = 0;
+  const archive = {retentionDays: 365, dispose() {finishHistory();}, async release() {}, async query() {queries++; await gate; return {data: {}, first: null, count: 0};}};
+  const h = await harness(t, {archive}); await h.open(); const panel = h.panels[0]; await panel.receive({type: 'ready'});
+  const now = Date.now(), expanding = panel.receive({type: 'historyExtend', from: now - 365 * 86400000, end: now + 7 * 86400000});
+  while (!queries) await new Promise(resolve => setImmediate(resolve));
+  let timer;
+  try {
+    h.release();
+    await Promise.race([h.api.refresh(), new Promise((_, reject) => {timer = setTimeout(() => reject(Error('collection waited for historical view')), 1500);})]);
+    assert.ok(h.calls.length > 0); assert.equal(queries, 1);
+  } finally {clearTimeout(timer); finishHistory(); await expanding;}
+});
+
+test('archive history loads only on request, survives tab hiding and releases the view on close', async t => {
+  const now = Date.now(), source = ['codex', 'claude'].flatMap(provider => [60, 0].map(days => ({v: 1, provider, account: core.hash(provider), plan: 'fixture', time: now - days * 86400000, windows: {five: null, week: {used: 30, reset: now + 86400000}}})));
+  const queries = [], archive = {retentionDays: 365, releases: 0, dispose() {}, async release() {this.releases++;}, async query(values) {queries.push(values); return {data: core.project(source), first: source[0].time, count: source.length};}};
+  const h = await harness(t, {archive}); await h.open(); const panel = h.panels[0]; await panel.receive({type: 'ready'});
+  assert.equal(queries.length, 0); assert.equal(h.api.snapshot().historyArchive, true);
+  const end = now + 7 * 86400000; await panel.receive({type: 'historyExtend', from: now - 365 * 86400000, end});
+  assert.equal(queries.length, 1); assert.equal(h.api.snapshot().firstObserved, now - 60 * 86400000);
+  const selection = h.api.snapshot().historySelection; assert.deepEqual(Array.from(selection.range), [now - 365 * 86400000, end]);
+  panel.visible = false; panel.view(); panel.visible = true; panel.view(); await panel.receive({type: 'ready'});
+  assert.equal(h.api.snapshot().historySelection.version, selection.version); assert.equal(queries.length, 1);
+  panel.dispose(); assert.equal(archive.releases, 1); await h.open();
+  const fresh = h.bootstrap(h.panels[1]); assert.equal(fresh.historySelection, undefined); assert.equal(fresh.count, 2); assert.equal(queries.length, 1);
+  assert.equal(h.calls.length, 0);
+});
+
 test('AGY smoothing settings update both views immediately without recollection or changing projection data', async t => {
   const h = await harness(t);
   await h.open(); const panel = h.panels[0]; await panel.receive({type: 'ready'});

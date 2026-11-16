@@ -6,7 +6,7 @@ const {promisify} = require('node:util');
 const root = path.resolve(__dirname, '..'), run = promisify(execFile);
 const directories = ['src', 'media', 'licenses', 'scripts', 'test', 'docs', '.github'];
 const rootFiles = ['package.json', 'package-lock.json', '.gitignore', '.gitattributes', '.vscodeignore', 'README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'VALIDATION.md', 'PRIVACY.md', 'CONTRIBUTING.md', 'SECURITY.md'];
-const sensitiveName = /(^|\/)(?:\.env(?:\..*)?|auth\.json|credentials[^/]*|history\.jsonl|metadata\.json|session-index\.json|forecast-learning\.json|settings\.json|id_rsa|id_ed25519)$|\.(?:pem|key|jsonl|vsix|log|exe)$/i;
+const sensitiveName = /(^|\/)(?:\.env(?:\..*)?|auth\.json|credentials[^/]*|history\.jsonl|history-archive\.sqlite(?:-wal|-shm)?|metadata\.json|session-index\.json|forecast-learning\.json|settings\.json|id_rsa|id_ed25519)$|\.(?:pem|key|jsonl|vsix|log|exe)$/i;
 const secrets = [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/, /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/, /\bsk-(?:proj-|ant-)[A-Za-z0-9_-]{40,}\b/];
 const privateHome = /[A-Z]:[\\/]+Users[\\/]+[^\\/\s'"<>]+|\/(?:home|Users)\/(?!private(?:\/|\b)|fixture(?:\/|\b)|test(?:\/|\b))[^\/\s'"<>]+/i;
 async function files(dir) {

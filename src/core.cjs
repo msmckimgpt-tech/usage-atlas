@@ -62,9 +62,9 @@ function currentRecords(records, provider) {
   const account = list.at(-1)?.account;
   return list.filter(s => s.account === account);
 }
-function windowTransitions(list, key) {
-  let previous;
-  return list.map(s => {
+function windowTransitions(list, key, carry) {
+  let previous = carry?.previous;
+  const out = list.map(s => {
     if (previous && s.plan !== previous.plan) previous = undefined;
     const w = s.windows[key];
     if (!w) return null;
@@ -79,9 +79,11 @@ function windowTransitions(list, key) {
     previous = {w, time: s.time, plan: s.plan};
     return event;
   });
+  if (carry) carry.previous = previous;
+  return out;
 }
 const isReset = event => event?.kind === 'scheduled-reset' || event?.kind === 'early-reset';
-function quotaSeries(list, key, capacities, maxGap, transitions = windowTransitions(list, key), displayBreaks) {
+function quotaSeries(list, key, capacities, maxGap, transitions = windowTransitions(list, key), displayBreaks, carry) {
   const {provider, account} = list.at(-1) || {};
   const byPlan = new Map(), positions = new Map();
   for (const c of capacities) if (c.provider === provider && c.account === account && c.window === key) {
@@ -90,8 +92,8 @@ function quotaSeries(list, key, capacities, maxGap, transitions = windowTransiti
   }
   // 동일 시각의 배율은 기존처럼 먼저 저장된 항목이 우선한다.
   for (const [plan, caps] of byPlan) {caps.sort((a, b) => a.time - b.time); byPlan.set(plan, caps.filter((c, i) => i === 0 || c.time !== caps[i - 1].time));}
-  let prev, watermark, cumulative = 0, nativeCumulative = 0, cumulativeKnown = true, cumulativeEstimated = false, segment = 0, cumulativeSegment = 0, displayCycle = 0;
-  return list.map((s, i) => {
+  let {prev, watermark, cumulative = 0, nativeCumulative = 0, cumulativeKnown = true, cumulativeEstimated = false, segment = 0, cumulativeSegment = 0, displayCycle = 0} = carry || {};
+  const out = list.map((s, i) => {
     const w = s.windows[key];
     const caps = byPlan.get(s.plan) || [];
     let position = positions.get(s.plan) ?? -1;
@@ -122,13 +124,15 @@ function quotaSeries(list, key, capacities, maxGap, transitions = windowTransiti
     prev = {w, time: s.time, plan: s.plan, mult};
     return p;
   });
+  if (carry) Object.assign(carry, {prev, watermark, cumulative, nativeCumulative, cumulativeKnown, cumulativeEstimated, segment, cumulativeSegment, displayCycle});
+  return out;
 }
 function creditLedger(records, provider, maxGap = 1800000) {
   return ledgerSeries(currentRecords(records, provider), provider, maxGap);
 }
-function ledgerSeries(list, provider, maxGap) {
+function ledgerSeries(list, provider, maxGap, carry) {
   const unit = provider === 'codex' ? 'credits' : 'USD';
-  let amount = 0, prev;
+  let {amount = 0, prev} = carry || {};
   const points = list.map(r => {
     const value = unit === 'credits' ? r.creditBalance : r.spentUsd;
     const previous = prev && (unit === 'credits' ? prev.creditBalance : prev.spentUsd);
@@ -139,6 +143,7 @@ function ledgerSeries(list, provider, maxGap) {
     const p = {time: r.time, amount: number(value) && value >= 0 ? amount : null, delta, continuous: delta !== null && r.time - prev.time <= maxGap};
     prev = r; return p;
   });
+  if (carry) Object.assign(carry, {amount, prev});
   return {unit, points, available: points.some(p => p.amount !== null), total: amount};
 }
 function project(records, capacities = [], maxGap = 1800000, enrich, forecast) {
@@ -161,10 +166,10 @@ function project(records, capacities = [], maxGap = 1800000, enrich, forecast) {
     return [id, {...(forecastValue ? {forecast: forecastValue} : {}), last: mine.at(-1), first: mine[0]?.time, events: [...sampled.values()].sort((a,b) => a.time-b.time).map(({value, continuous, ...e}) => e), eventCount: events.length, windows: Object.fromEntries(['five', 'week'].map(w => [w, thin(windows[w], 2000)])), ledger: thin(ledger.points, 1500), ledgerUnit: ledger.unit, ledgerAvailable: ledger.available, creditTotal: ledger.total}];
   }));
 }
-function creditValues(list, ledger, transitions = windowTransitions(list, 'week')) {
+function creditValues(list, ledger, transitions = windowTransitions(list, 'week'), carry) {
   const week = 7 * 86400000;
-  let reset = null, usage = 0, segment = 0, cumulativeSegment = 0, lastCreditValue = null;
-  return list.map((r, i) => {
+  let {reset = null, usage = 0, segment = 0, cumulativeSegment = 0, lastCreditValue = null} = carry || {};
+  const out = list.map((r, i) => {
     const declared = r.windows?.week?.reset;
     const cycleChanged = !number(reset) || r.time >= reset || isReset(transitions[i]);
     if (number(declared) && declared > r.time) {
@@ -174,7 +179,7 @@ function creditValues(list, ledger, transitions = windowTransitions(list, 'week'
     if (number(reset) && r.time >= reset) reset += (Math.floor((r.time - reset) / week) + 1) * week;
     const sameCycle = number(reset) && !cycleChanged;
     const p = ledger[i];
-    const previous = list[i - 1], key = r.provider === 'codex' ? 'creditBalance' : 'spentUsd';
+    const previous = list[i - 1] || carry?.previous, key = r.provider === 'codex' ? 'creditBalance' : 'spentUsd';
     const cumulativeBoundary = previous && (previous.plan !== r.plan || r.provider === 'claude' && previous.spendPeriod !== r.spendPeriod || transitions[i]?.kind === 'decrease'
       || number(lastCreditValue) && number(r[key]) && (r.provider === 'codex' ? r[key] > lastCreditValue : r[key] < lastCreditValue));
     if (previous && (cumulativeBoundary || cycleChanged || isReset(transitions[i]))) segment++;
@@ -183,18 +188,57 @@ function creditValues(list, ledger, transitions = windowTransitions(list, 'week'
     if (!sameCycle) usage = 0;
     if (sameCycle && number(p.delta)) usage += p.delta;
     const continuous = p.continuous && sameCycle;
-    const delta = continuous && r.plan === list[i - 1]?.plan ? p.delta : null;
+    const delta = continuous && r.plan === previous?.plan ? p.delta : null;
     const result = {usage: number(reset) && number(p.amount) ? usage : null, delta, total: p.amount, reset, segment, cumulativeSegment, cycleStart: !sameCycle, usageContinuous: !!continuous, deltaContinuous: !!(continuous && number(delta)), totalContinuous: !!p.continuous};
     return result;
   });
+  if (carry) Object.assign(carry, {reset, usage, segment, cumulativeSegment, lastCreditValue, previous: list.at(-1) || carry.previous});
+  return out;
 }
 function creditModes(records, provider, maxGap = 1800000) {
   const mine = currentRecords(records, provider), ledger = ledgerSeries(mine, provider, maxGap);
   const credit = creditValues(mine, ledger.points);
   return ledger.points.map((p, i) => ({...p, credit: credit[i]}));
 }
+class ProjectionStream {
+  constructor(heads, capacities = [], maxGap = 1800000, enrich) {
+    this.capacities = capacities; this.maxGap = maxGap; this.enrich = enrich; this.nodes = new Map();
+    for (const id of catalog.ids(heads)) this.nodes.set(id, {account: heads.findLast(r => r.provider === id)?.account, windows: {five: [], week: []}, transitions: {five: {}, week: {}}, quota: {five: {}, week: {}}, credit: {}, ledgerState: {}, ledger: [], events: [], changes: new Map(), eventCount: 0, ledgerAvailable: false, creditTotal: 0});
+  }
+  accept(records) {
+    const groups = new Map(), boundaries = new Map();
+    for (const row of records) {
+      const node = this.nodes.get(row.provider); if (!node) continue;
+      const changed = node.previousAccount && node.previousAccount !== row.account; node.previousAccount = row.account;
+      if (row.account !== node.account) continue;
+      if (!groups.has(row.provider)) {groups.set(row.provider, []); boundaries.set(row.provider, new Set());}
+      groups.get(row.provider).push(row); if (changed) boundaries.get(row.provider).add(row.time);
+    }
+    for (const [id, mine] of groups) {
+      const node = this.nodes.get(id), transitions = Object.fromEntries(['five', 'week'].map(w => [w, windowTransitions(mine, w, node.transitions[w])]));
+      const ledger = ledgerSeries(mine, id, this.maxGap, node.ledgerState), credit = creditValues(mine, ledger.points, transitions.week, node.credit);
+      const attach = points => {for (let i = 0; i < points.length; i++) points[i].credit = credit[i]; return points;};
+      const windows = Object.fromEntries(['five', 'week'].map(w => [w, attach(quotaSeries(mine, w, this.capacities, this.maxGap, transitions[w], boundaries.get(id), node.quota[w]))]));
+      attach(ledger.points); this.enrich?.(id, mine, windows, ledger.points);
+      for (const w of ['five', 'week']) {
+        node.windows[w] = thin(node.windows[w].concat(windows[w]), 2000);
+        for (const e of transitions[w].filter(Boolean)) {const event = {...e, window: w}; node.events.push({...event, value: Math.abs(e.before - e.after)}); node.eventCount++; if (e.kind === 'schedule-change') node.changes.set(w, event);}
+      }
+      node.events = thin(node.events.sort((a, b) => a.time - b.time), 2000);
+      node.ledger = thin(node.ledger.concat(ledger.points), 1500); node.ledgerAvailable ||= ledger.available; node.creditTotal = ledger.total;
+      node.first ??= mine[0].time; node.last = mine.at(-1);
+    }
+  }
+  data() {
+    return Object.fromEntries([...this.nodes].map(([id, n]) => {
+      const events = new Map(thin(n.events, 2000).map(e => [e.window + '/' + e.time + '/' + e.kind, e]));
+      for (const e of n.changes.values()) events.set(e.window + '/' + e.time + '/' + e.kind, e);
+      return [id, {last: n.last, first: n.first, events: [...events.values()].sort((a, b) => a.time - b.time).map(({value, continuous, ...e}) => e), eventCount: n.eventCount, windows: Object.fromEntries(['five', 'week'].map(w => [w, thin(n.windows[w], 2000)])), ledger: thin(n.ledger, 1500), ledgerUnit: id === 'codex' ? 'credits' : 'USD', ledgerAvailable: n.ledgerAvailable, creditTotal: n.creditTotal}];
+    }));
+  }
+}
 class Store {
-  constructor(dir, retentionDays = 90) {this.dir = dir; this.retentionDays = retentionDays; this.queue = Promise.resolve();}
+  constructor(dir, retentionDays = 90, {archive = false, archiveRetentionDays = 365} = {}) {this.dir = dir; this.retentionDays = retentionDays; this.queue = Promise.resolve(); this.archive = archive ? new (require('./history-archive.cjs').HistoryArchive)(dir, archiveRetentionDays) : null; this.archivePending = [];}
   get retentionDays() {return this._retentionDays;}
   set retentionDays(value) {if (number(value) && value >= 7 && value <= 365) this._retentionDays = value; else this._retentionDays ??= 90;}
   async withLock(fn) {
@@ -224,8 +268,9 @@ class Store {
       let read = 0;
       while (read < bytes.length) {const result = await handle.read(bytes, read, bytes.length - read, offset + read); if (!result.bytesRead) break; read += result.bytesRead;}
       const text = bytes.toString('utf8', 0, read), out = incremental ? [...this.cached] : [];
-      let corrupt = false, count = incremental ? this.physicalCount : 0;
-      for (const line of text.split('\n')) {if (!line) continue; try {out.push(sanitize(JSON.parse(line))); count++;} catch {corrupt = true;}}
+      let corrupt = false, count = incremental ? this.physicalCount : 0; const archiveRows = [];
+      for (const line of text.split('\n')) {if (!line) continue; try {const row = sanitize(JSON.parse(line)); out.push(row); if (this.archive) archiveRows.push(row); count++;} catch {corrupt = true;}}
+      if (this.archive) this.archivePending = this.archivePending.concat(archiveRows).slice(-recordLimit - compactionMargin);
       if (out.some((r, i) => i > 0 && r.time < out[i - 1].time)) out.sort((a, b) => a.time - b.time);
       this.cached = out; this.keys = new Set(out.map(s => this.key(s))); this.physicalCount = count;
       this.physicalFirst = incremental ? this.physicalFirst : out[0]?.time;
@@ -247,6 +292,7 @@ class Store {
   async commit(additions) {
     const clean = additions.map(sanitize);
     const data = await this.read(), fresh = [], keys = new Set();
+    if (this.archive) {await this.archive.append(this.archivePending.concat(clean)); this.archivePending = [];}
     const cutoff = Date.now() - this.retentionDays * 86400000;
     for (const s of clean) {const key = this.key(s); if (s.time >= cutoff && !this.keys.has(key) && !keys.has(key)) {keys.add(key); fresh.push(s);}}
     fresh.sort((a, b) => a.time - b.time);
@@ -315,4 +361,4 @@ function thin(points, budget) {
     return {...points[i], continuous, ...('totalContinuous' in points[i] ? {totalContinuous} : {}), ...(credit ? {credit} : {}), ...(estimate ? {creditEstimate: estimate} : {}), ...(billing ? {billing} : {})};
   });
 }
-module.exports = {hash, windowValue, codexSnapshot, claudeSnapshot, validSnapshot, sanitize, series, creditLedger, creditModes, project, Store, thin};
+module.exports = {hash, windowValue, codexSnapshot, claudeSnapshot, validSnapshot, sanitize, series, creditLedger, creditModes, project, ProjectionStream, Store, thin};

@@ -6,17 +6,17 @@ function monthlyPrice(provider, plan, rates = catalog) {
   const monthlyUsd = entry && Object.hasOwn(entry.plans, plan) ? entry.plans[plan] : null;
   return finite(monthlyUsd) && monthlyUsd > 0 ? {monthlyUsd, usdPerCredit: entry.usdPerCredit, verifiedAt: rates.verifiedAt || rates.version} : null;
 }
-function enricher(rates = catalog) {
+function enricher(rates = catalog, states) {
   return (provider, records, _windows, ledger) => {
-    let usage = 0, total = 0, usageKnown = true, totalKnown = true, previous, segment = 0;
+    let {usage = 0, total = 0, usageKnown = true, totalKnown = true, previous, segment = 0, hasPrevious = false} = states?.get(provider) || {};
     for (let i = 0; i < records.length; i++) {
       const row = records[i], point = ledger[i], credit = point.credit, profile = monthlyPrice(provider, row.plan, rates);
-      const key = profile ? JSON.stringify(profile) : null, changed = i > 0 && previous !== key; previous = key;
+      const key = profile ? JSON.stringify(profile) : null, changed = hasPrevious && previous !== key; previous = key;
       if (changed) segment++;
       const unitUsd = provider === 'claude' ? 1 : profile?.usdPerCredit;
-      const deltaUsd = point.delta === 0 || i === 0 ? 0 : finite(point.delta) && finite(unitUsd) ? point.delta * unitUsd : null;
+      const deltaUsd = point.delta === 0 || !hasPrevious ? 0 : finite(point.delta) && finite(unitUsd) ? point.delta * unitUsd : null;
       const delta = finite(deltaUsd) && profile ? deltaUsd / profile.monthlyUsd * 100 : null;
-      if (i && point.delta > 0) {if (finite(deltaUsd)) total += deltaUsd; else totalKnown = false;}
+      if (hasPrevious && point.delta > 0) {if (finite(deltaUsd)) total += deltaUsd; else totalKnown = false;}
       if (credit.cycleStart) {usage = 0; usageKnown = true;} else if (point.delta > 0) {if (finite(deltaUsd)) usage += deltaUsd; else usageKnown = false;}
       point.billing = {
           usage: profile && finite(credit.usage) && usageKnown ? usage / profile.monthlyUsd * 100 : null
@@ -27,7 +27,9 @@ function enricher(rates = catalog) {
         , totalContinuous: credit.totalContinuous && totalKnown && !changed
         , segment, monthlyUsd: profile?.monthlyUsd ?? null, usdPerCredit: profile?.usdPerCredit ?? null, priceVerifiedAt: profile?.verifiedAt ?? null
       };
+      hasPrevious = true;
     }
+    states?.set(provider, {usage, total, usageKnown, totalKnown, previous, segment, hasPrevious});
   };
 }
 module.exports = {monthlyPrice, enricher, catalog};

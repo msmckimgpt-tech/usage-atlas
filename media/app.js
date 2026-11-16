@@ -12,7 +12,7 @@
   const week = 7 * 86400000, minSpan = 60000;
   const providerVisibility = globalThis.usageAtlasProviderVisibility;
   const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, range: null};
-  let state = {...defaults}, model = {now: Date.now(), data: {}}, raf, view, gesture = null, chartDrag = null;
+  let state = {...defaults}, model = {now: Date.now(), data: {}}, raf, view, gesture = null, chartDrag = null, historyBusy = false;
   const initialNode = document.getElementById('ua-initial-data');
   if (initialNode) {const initial = JSON.parse(initialNode.textContent); if (initial?.type === 'data' && initial.data && Number.isFinite(initial.now)) model = initial; initialNode.remove();}
   const details = globalThis.usageAtlasDetails?.({api, root, getModel: () => model});
@@ -21,6 +21,7 @@
     for (const [key, values] of Object.entries({mode: ['usage', 'delta', 'total'], basis: ['current', 'base'], theme: ['system', 'light', 'dark'], creditMode: ['money', 'estimate']})) if (values.includes(saved[key])) state[key] = saved[key];
     for (const key of ['credit', 'refs']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
     if (Array.isArray(saved.range) && saved.range.length === 2 && saved.range.every(Number.isFinite) && saved.range[0] < saved.range[1]) state.range = [...saved.range];
+    if (Number.isSafeInteger(saved.historyVersion) && saved.historyVersion >= 0) state.historyVersion = saved.historyVersion;
   }
   let legacySelection = saved && [3, 4, 5].includes(saved.version) && !initialNode ? saved : null;
   state.hiddenProviders = providerVisibility.restore([...new Set([...ids, ...Object.keys(model.data)])], saved);
@@ -83,6 +84,13 @@
     el('nav-thumb').style.width = (domain[1] - domain[0]) / duration * 100 + '%';
     el('nav-thumb').dataset.compact = String((domain[1] - domain[0]) / duration * el('navigator').clientWidth < 36);
     el('nav-now').style.left = position(model.now) + '%';
+    el('history-controls').setAttribute('aria-busy', String(historyBusy));
+    for (const button of el('history-controls').querySelectorAll('button')) {
+      button.disabled = historyBusy || domain[0] <= extent[0] + 1 && model.historyHasMore !== true;
+      if (historyBusy) button.title = '과거 기록을 불러오는 중입니다';
+      else if (button.disabled) button.title = '보관된 가장 오래된 기록까지 표시 중입니다';
+      else button.title = `표시 시작일을 ${button.textContent} 이전으로 확장`;
+    }
     for (const [part, value, min, max] of [
       ['start', domain[0], extent[0], domain[1] - minSpan]
       , ['end', domain[1], domain[0] + minSpan, extent[1]]
@@ -94,6 +102,30 @@
       node.setAttribute('aria-describedby', 'ua-nav-help');
     }
   }
+  function earlier(time, unit) {
+    const date = new Date(time);
+    if (unit === 'week') date.setDate(date.getDate() - 7);
+    else {
+      const day = date.getDate(); date.setDate(1);
+      if (unit === 'month') date.setMonth(date.getMonth() - 1);
+      else date.setFullYear(date.getFullYear() - 1);
+      const end = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      date.setDate(Math.min(day, end));
+    }
+    return date.getTime();
+  }
+  const historyControls = el('history-controls');
+  for (const type of ['pointerdown', 'dblclick', 'keydown']) historyControls.addEventListener(type, event => event.stopPropagation());
+  historyControls.addEventListener('click', event => {
+    const button = event.target.closest('button[data-history-unit]');
+    if (!button || !view || button.disabled) return;
+    event.stopPropagation();
+    const from = earlier(view.domain[0], button.dataset.historyUnit);
+    if (model.historyArchive && from < view.extent[0]) {
+      historyBusy = true; el('history-status').textContent = '불러오는 중…'; navigator();
+      api.postMessage({type: 'historyExtend', from, end: view.domain[1]});
+    } else setRange([Math.max(view.extent[0], from), view.domain[1]]);
+  });
   function providerInfo() {
     for (const id of ids) {
       const p = model.data[id], last = p?.last;
@@ -708,11 +740,15 @@
         if (gesture) {const pointerId = gesture.pointerId; finish({type: 'pointercancel', pointerId}); if (nav.hasPointerCapture(pointerId)) nav.releasePointerCapture(pointerId);}
       }
       model = e.data;
+      if (model.historySelection?.version > (state.historyVersion || 0) && Array.isArray(model.historySelection.range) && model.historySelection.range.length === 2 && model.historySelection.range.every(number) && model.historySelection.range[0] < model.historySelection.range[1]) {
+        state.range = [...model.historySelection.range]; state.historyVersion = model.historySelection.version; historyBusy = false; el('history-status').textContent = ''; save();
+      }
       if (legacySelection) {state.hiddenProviders = providerVisibility.restore([...new Set(['codex', 'claude', ...Object.keys(model.data)])], legacySelection); legacySelection = null; save();}
       if (['subscription', 'billing'].includes(model.creditBasis) && (!basisPending || model.creditBasis === basisPending)) {state.creditBasis = model.creditBasis; basisPending = null;}
       if (changed) {state.range = null; save();}
       requestDraw();
-    } else if (e.data?.type === 'creditBasisRejected') {state.creditBasis = e.data.value === 'billing' ? 'billing' : 'subscription'; basisPending = null; save(); requestDraw();}
+    } else if (e.data?.type === 'historyError') {historyBusy = false; el('history-status').textContent = '불러오지 못함'; el('history-controls').title = e.data.message || '과거 기록을 불러오지 못했습니다.'; requestDraw();}
+    else if (e.data?.type === 'creditBasisRejected') {state.creditBasis = e.data.value === 'billing' ? 'billing' : 'subscription'; basisPending = null; save(); requestDraw();}
     else if (e.data?.type === 'resetView') resetRange();
   });
   let lastWidth, lastHeight;

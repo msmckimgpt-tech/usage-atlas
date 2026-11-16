@@ -38,7 +38,7 @@ const forecastConfig = (interval = maxIntervalSeconds()) => {
   return {...raw, fiveMinutes: normalized.fiveMinutes, weekHours: normalized.weekHours, patternDays: normalized.patternDays, timeZone: normalized.timeZone};
 };
 const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
-  const store = new Store(context.globalStorageUri.fsPath, cfg().get('retentionDays'));
+  const store = new Store(context.globalStorageUri.fsPath, cfg().get('retentionDays'), {archive: true, archiveRetentionDays: cfg().get('archiveRetentionDays', 365)});
   const metadataFile = path.join(store.dir, 'metadata.json');
   const output = vscode.window.createOutputChannel('Usage Atlas');
   const controller = new AbortController();
@@ -54,6 +54,23 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   const closeConversations = () => {conversationSerial++; conversationController?.abort(); conversationScope = null; return conversationReader.close();};
   let creditBasisQueue = Promise.resolve();
   let panel, timer, disposed = false, running = null, uiReady = false, intervalChanged = false, timerVersion = 0, revision = 0, sentRevision = -1, viewRefreshPending = false;
+  let historyFrom = null, historyProjection, historySelection, historyVersion = 0, historyController, historyWork, historyStamp, viewSending;
+  async function loadHistory() {
+    if (historyFrom === null || !store.archive) return;
+    store.archive.retentionDays = cfg().get('archiveRetentionDays', 365);
+    const conversion = currentConversion(), stamp = [records, metadata.capacities, conversion, historyFrom, store.archive.retentionDays, maxIntervalSeconds(), Math.floor(Date.now() / 86400000)];
+    if (historyProjection && historyStamp?.every((value, i) => value === stamp[i])) return;
+    if (historyWork) {try {await historyWork;} catch (error) {if (historyFrom === null || historyController?.signal.aborted) throw error;} if (historyFrom !== null) return loadHistory(); return;}
+    const from = historyFrom, signal = (historyController ||= new AbortController()).signal;
+    historyWork = (async () => {
+      const pendingRows = store.archivePending;
+      if (pendingRows?.length) {await store.archive.append(pendingRows); if (store.archivePending === pendingRows) store.archivePending = [];}
+      return store.archive.query({from, capacities: metadata.capacities, conversion, maxGap: Math.max(1800000, maxIntervalSeconds() * 3000)}, {signal});
+    })().then(value => {
+      if (!signal.aborted && historyFrom === from) {historyProjection = value; historyStamp = stamp;}
+    }).finally(() => {historyWork = null;});
+    return historyWork;
+  }
   let bodyCache, automatic, automaticStamp, conversionInput, usableConversion;
   const automaticFile = path.join(store.dir, 'automatic-conversion.json');
   const bodyHtml = () => bodyCache ||= fs.readFile(path.join(context.extensionPath, 'media', 'body.html'), 'utf8').catch(e => {bodyCache = null; throw e;});
@@ -174,22 +191,36 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   }
   function payload() {
     const now = Date.now(), data = {}; let firstObserved = now;
-    const projection = projected();
+    const live = projected(), projection = historyProjection?.data || live;
     for (const id of Object.keys(projection)) {
       const p = projection[id], last = p.last;
       if (p.first !== undefined) firstObserved = Math.min(firstObserved, p.first);
-      data[id] = {...p, status: metadata.collectors[collectorId(id)]};
+      data[id] = {...p, ...(live[id]?.forecast ? {forecast: live[id].forecast} : {}), status: metadata.collectors[collectorId(id)]};
 
     }
-    return {type: 'data', now, firstObserved, data, visibility: displayConfig(), creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), antigravitySmoothingMinutes: chartGraphs.smoothing(cfg().get('antigravitySmoothingMinutes', 5)), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: records.length};
+    return {type: 'data', now, firstObserved, data, historyArchive: !!store.archive, historyHasMore: !!store.archive && (!historyProjection || Number.isFinite(historyProjection.first) && historyProjection.first < firstObserved), historySelection, visibility: displayConfig(), creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), antigravitySmoothingMinutes: chartGraphs.smoothing(cfg().get('antigravitySmoothingMinutes', 5)), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, storagePath: store.dir, theme: vscode.window.activeColorTheme.kind, count: historyProjection?.count ?? records.length};
   }
-  async function sendView() {
+  function sendView() {
+    if (historyFrom === null) return deliverView();
+    if (viewSending) {viewRefreshPending = true; return viewSending;}
+    const startedPanel = panel; let succeeded = false;
+    viewSending = deliverView().then(delivered => {succeeded = delivered === true;}).finally(() => {
+      viewSending = null;
+      if ((succeeded || panel !== startedPanel) && viewRefreshPending && panel?.visible && uiReady) sendView().catch(e => output.appendLine(e.message));
+    });
+    return viewSending;
+  }
+  async function deliverView() {
     if (!panel?.visible || !uiReady || sentRevision === revision && !viewRefreshPending) return;
     const current = panel, version = revision; viewRefreshPending = false; sentRevision = version;
+    try {if (historyFrom !== null) await loadHistory();} catch (error) {sentRevision = -1; viewRefreshPending = true; throw error;}
+    if (panel !== current || !current.visible || !uiReady) return;
+    if (revision !== version) {viewRefreshPending = true; return true;}
     const delivered = await current.webview.postMessage({...payload(), revision: version});
     if (!delivered && panel === current && sentRevision === version) {sentRevision = -1; viewRefreshPending = true;}
+    return delivered;
   }
-  async function publish() {revision++; updateStatus(); await sendView();}
+  async function publish(waitView = false) {revision++; updateStatus(); if (historyFrom === null || waitView) await sendView(); else if (viewSending) viewRefreshPending = true; else sendView().catch(e => output.appendLine(e.message));}
   async function refreshStored() {
     const previousRecords = records, previousMetadata = metadata, previousAutomatic = automatic, previousLearned = learnedForecast, previousBook = patternBook.revision;
     const [, currentRecords] = await Promise.all([loadMeta(), store.read()]);
@@ -229,7 +260,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         }
         if (!force && Date.now() - (metadata.analysisScanAt || 0) < 14000) return false;
         await loadAnalysis();
-        store.retentionDays = cfg().get('retentionDays'); sessionIndex.retentionDays = store.retentionDays;
+        store.retentionDays = cfg().get('retentionDays'); if (store.archive) store.archive.retentionDays = cfg().get('archiveRetentionDays', 365); sessionIndex.retentionDays = store.retentionDays;
         records = await store.read();
         const previous = analysisData.activity || {};
         analysisData = await diagnostics.measure('shared', 'session-index', () => sessionIndex.scan({codexHome: process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), claudeDir: cfg().get('claudeConfigDir') || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), accounts: Object.fromEntries(['codex', 'claude'].map(id => [id, latest(id)?.account])), signal: controller.signal}));
@@ -290,11 +321,23 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     })().finally(() => {forecastRunning = null; projectionCache = null;});
     return forecastRunning;
   }
+  async function detailContext(message, signal) {
+    const archived = historyProjection?.data?.[message.provider]?.last;
+    const base = archived && !records.some(row => row.provider === message.provider) ? records.concat(archived) : records;
+    const days = historyProjection ? Math.max(cfg().get('retentionDays') || 90, cfg().get('archiveRetentionDays', 365)) : cfg().get('retentionDays');
+    const scope = selection(message, base, days);
+    if (historyProjection && store.archive && scope.start < (records[0]?.time ?? Infinity)) {
+      const archive = await store.archive.details({provider: scope.provider, account: scope.account, from: scope.start, to: scope.end, time: scope.cursorTime}, {signal});
+      return {scope, source: archive.records, archive};
+    }
+    return {scope, source: records};
+  }
   async function detailReport(message, extra = {}, signal = controller.signal) {
     await refreshStored(); if (cfg().get('analysisEnabled', true)) await loadAnalysis(); await diagnostics.load();
     store.retentionDays = cfg().get('retentionDays');
-    const scope = selection(message, records, store.retentionDays);
-    const report = await diagnostics.measure(scope.provider, 'details', async () => queryAnalysis({...scope, ...scope.filters, calls: cfg().get('analysisEnabled', true) ? analysisData.calls : [], records, capacities: metadata.capacities, coverage: analysisData.coverage?.[scope.provider] || {}, conversionModel: currentConversion(), exclusions: metadata.exclusions || [], diagnostics: diagnostics.snapshot(collectorId(scope.provider)), now: Date.now(), ...extra}, {signal}));
+    const {scope, source, archive} = await detailContext(message, signal);
+    const report = await diagnostics.measure(scope.provider, 'details', async () => queryAnalysis({...scope, ...scope.filters, calls: cfg().get('analysisEnabled', true) ? analysisData.calls : [], records: source, capacities: metadata.capacities, coverage: analysisData.coverage?.[scope.provider] || {}, conversionModel: currentConversion(), exclusions: metadata.exclusions || [], diagnostics: diagnostics.snapshot(collectorId(scope.provider)), now: Date.now(), ...extra}, {signal}));
+    if (archive?.truncated) {report.coverage.source ||= {}; report.coverage.source.partial = true; const notes = report.coverage.source.notes; report.coverage.source.notes = [...(Array.isArray(notes) ? notes : []), '과거 원본은 선택한 시각 인근 최대 50,000건으로 제한되었습니다. 정확한 구간 분석은 차트를 확대해 기간을 좁혀주세요.'];}
     report.selection = {...scope, time: scope.cursorTime}; report.storage = pending.status();
     report.collection = {...metadata.collectors[collectorId(scope.provider)], baseIntervalSeconds: intervalSeconds(cfg().get('intervalSeconds')), adaptive: cfg().get('adaptiveCollection', true), connection: scope.provider === 'codex' ? cfg().get('codexConnectionMode', 'onDemand') : providerCatalog.isAntigravity(scope.provider) ? 'local-rpc' : 'https-keep-alive'};
     if (diagnostics.enabled) {
@@ -344,14 +387,17 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     try {
       await refreshStored();
       let preview;
-      if (message.type === 'analysisPreviewExclude' || message.type === 'analysisExclude') preview = createExclusion(message, records, metadata.capacities);
+      const context = message.type === 'details' ? null : await detailContext(message, signal);
+      if (context?.archive?.truncated && message.type !== 'analysisRestore') throw Error('선택 구간을 더 좁힌 뒤 분석 제외를 적용해주세요.');
+      if (message.type === 'analysisPreviewExclude' || message.type === 'analysisExclude') preview = createExclusion(message, context.source, metadata.capacities);
       if (message.type === 'analysisExclude') {
-        const changed = await changeMeta(async () => {records = await store.read(); const value = createExclusion(message, records, metadata.capacities); metadata.exclusions ||= []; if (metadata.exclusions.length >= 4096) throw new Error('분석 제외 기록 제한에 도달했습니다.'); metadata.exclusions.push(value);});
+        const changed = await changeMeta(async () => {records = await store.read(); const latest = records.findLast(row => row.provider === context.scope.provider); if (latest && latest.account !== context.scope.account) throw Error('계정이 변경되었습니다. 상세 조회를 다시 열어주세요.'); const value = createExclusion(message, context.source, metadata.capacities); metadata.exclusions ||= []; if (metadata.exclusions.length >= 4096) throw new Error('분석 제외 기록 제한에 도달했습니다.'); metadata.exclusions.push(value);});
         if (!changed) throw new Error('수집 중입니다. 잠시 후 다시 시도하세요.');
       } else if (message.type === 'analysisRestore') {
         const changed = await changeMeta(async () => {
           records = await store.read();
-          const scope = selection(message, records, store.retentionDays);
+          const latest = records.findLast(row => row.provider === context.scope.provider); if (latest && latest.account !== context.scope.account) throw Error('계정이 변경되었습니다. 상세 조회를 다시 열어주세요.');
+          const scope = context.scope;
           const value = (metadata.exclusions || []).find(e => e.id === message.exclusionId && e.provider === scope.provider && e.account === scope.account && e.window === scope.window);
           if (!value) throw new Error('복원할 분석 제외 기록을 확인할 수 없습니다.');
           value.restoredAt ||= Date.now();
@@ -431,11 +477,18 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     panel = vscode.window.createWebviewPanel('usageAtlas', 'Usage Atlas', vscode.ViewColumn.Active, {enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')]});
     const current = panel;
     uiReady = false; sentRevision = -1; viewRefreshPending = false;
-    current.onDidDispose(() => {if (panel === current) {panel = undefined; uiReady = false; detailSerial++; detailController?.abort(); closeConversations();}});
+    current.onDidDispose(() => {if (panel === current) {panel = undefined; uiReady = false; detailSerial++; detailController?.abort(); closeConversations(); historyController?.abort(); historyController = undefined; historyFrom = null; historyProjection = historySelection = historyStamp = undefined; historyVersion = 0; store.archive?.release().catch(() => {});}});
     current.onDidChangeViewState(() => {if (panel !== current) return; if (!current.visible) {uiReady = false; viewRefreshPending = true; detailSerial++; detailController?.abort(); closeConversations();} else sendView().catch(e => output.appendLine(e.message));});
     current.webview.onDidReceiveMessage(async m => {
       if (panel !== current || !m || typeof m !== 'object') return;
       if (m.type === 'ready' && !uiReady) {uiReady = true; sentRevision = Number.isSafeInteger(m.revision) ? m.revision : -1; await sendView();}
+      if (m.type === 'historyExtend' && store.archive && Number.isFinite(m.from) && Number.isFinite(m.end) && m.from >= 0 && m.from < Math.min(m.end, Date.now()) && m.end <= Date.now() + 8 * 86400000) {
+        const version = ++historyVersion, previousFrom = historyFrom, previousProjection = historyProjection;
+        historyController?.abort(); historyController = new AbortController(); historyFrom = Math.min(historyFrom ?? Infinity, m.from); historyStamp = undefined;
+        try {await loadHistory(); if (panel === current && version === historyVersion) {historySelection = {version, range: [m.from, m.end]}; await publish(true);}}
+        catch (error) {if (panel === current && version === historyVersion) {historyFrom = previousFrom; historyProjection = previousProjection; historyStamp = undefined; await current.webview.postMessage({type: 'historyError', message: error.message});}}
+        return;
+      }
       if (m.type === 'creditBasis' && ['subscription', 'billing'].includes(m.value)) {
         creditBasisQueue = creditBasisQueue.catch(() => {}).then(async () => {
           const config = cfg(), inspected = config.inspect?.('creditBasis');
@@ -518,7 +571,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   schedule(Math.min(5000, intervalSeconds(cfg().get('intervalSeconds')) * 1000));
   const maintenanceTick = async () => {try {await maintainAnalysis(); await maintainForecast();} finally {if (!disposed) maintenanceTimer = setTimeout(maintenanceTick, 15000);}};
   maintenanceTimer = setTimeout(maintenanceTick, 7000);
-  stop = () => {disposed = true; clearTimeout(timer); clearTimeout(maintenanceTimer); detailSerial++; detailController?.abort(); closeConversations(); controller.abort(); adapters.dispose(); antigravity.dispose(); sessionIndex.dispose?.(); projectionCache = null; panel?.dispose();};
+  stop = () => {disposed = true; clearTimeout(timer); clearTimeout(maintenanceTimer); detailSerial++; detailController?.abort(); closeConversations(); controller.abort(); adapters.dispose(); antigravity.dispose(); sessionIndex.dispose?.(); historyController?.abort(); store.archive?.dispose(); projectionCache = null; panel?.dispose();};
   context.subscriptions.push({dispose: stop});
   return {snapshot: () => payload(), refresh: collect, storagePath: store.dir, isUiReady: () => uiReady, forecastLearningStatus: () => ({model: learnedForecast, patternCells: [...patternBook.scopes.values()].reduce((sum,g)=>sum+g.cells.size,0)}), maintainForecast, details: detailReport, conversation: conversationReport, closeConversations, conversationStatus: () => ({sources: conversationReader.states.length}), maintainAnalysis, analysisSnapshot: () => analysisData, pendingStatus: () => pending.status()};
 }

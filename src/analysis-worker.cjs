@@ -4,7 +4,7 @@ const analyze = data => data.operation === 'conversion' ? require('./credit-conv
 const cancelled = () => Object.assign(new Error('상세 분석이 취소되었습니다.'), {code: 'ABORT_ERR'});
 async function queryAnalysis(data, {signal, deadlineMs = 10000, threshold = 1500} = {}) {
   if (signal?.aborted) throw cancelled();
-  if ((data.calls?.length || 0) <= threshold) return analyze(data);
+  if ((data.calls?.length || 0) <= threshold && (data.records?.length || 0) <= 5000) return analyze(data);
   return new Promise((resolve, reject) => {
     const worker = new Worker(__filename, {workerData: data, execArgv: [], resourceLimits: {maxOldGenerationSizeMb: 192, maxYoungGenerationSizeMb: 16, stackSizeMb: 4}});
     let settled = false;

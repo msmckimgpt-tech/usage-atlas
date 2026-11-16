@@ -149,27 +149,28 @@ function validConversion(value, key) {
     && Array.isArray(value.cohorts) && value.cohorts.length <= 240000 && value.cohorts.every(row => row && ['codex', 'claude'].includes(row.provider) && ['five', 'week'].includes(row.window) && typeof row.id === 'string' && row.id === cohortKey(row.provider, row.account, row.plan, row.mult, row.window) && positive(row.unitsPerPercent) && (row.mult === null || positive(row.mult)))
     && Array.isArray(value.debitWeights) && value.debitWeights.length <= 120000 && value.debitWeights.every(row => Array.isArray(row) && row.length === 2 && /^[a-f0-9]{64}$/.test(row[0]) && positive(row[1]) && row[1] <= 16);
 }
-function converter(model) {
+function converter(model, options = {}) {
   const cohorts = new Map((model?.cohorts || []).map(row => [row.id, row]));
   const weights = new Map(model?.debitWeights || []);
   return (provider, mine, windows, ledger) => {
     for (const window of ['five', 'week']) {
-      let usage = 0, total = 0, usageKnown = true, totalKnown = true;
-      let nativeUsage = 0, nativeTotal = 0, nativeUsageKnown = true, nativeTotalKnown = true;
-      const points = windows[window], currentMult = points.at(-1)?.mult;
+      const key = provider + '/' + window, saved = options.states?.get(key);
+      let {usage = 0, total = 0, usageKnown = true, totalKnown = true, nativeUsage = 0, nativeTotal = 0, nativeUsageKnown = true, nativeTotalKnown = true} = saved || {};
+      const points = windows[window], currentMult = options.multipliers?.[provider] && Object.hasOwn(options.multipliers[provider], window) ? options.multipliers[provider][window] : points.at(-1)?.mult;
       for (let i = 0; i < mine.length; i++) {
-        const row = mine[i], before = mine[i - 1], point = points[i], paid = ledger[i], credit = paid.credit;
+        const row = mine[i], before = mine[i - 1] || saved?.previous, point = points[i], paid = ledger[i], credit = paid.credit;
         const cohort = cohorts.get(cohortKey(provider, row.account, row.plan, point.mult, window));
         const raw = paid.delta;
         const coverage = model?.paidThrough?.[provider];
         const standardPending = provider === 'codex' && positive(raw) && coverage?.account === row.account && row.time > coverage.time;
-        const ratio = !positive(raw) || provider === 'claude' ? 1 : cohort && before ? weights.get(debitKey(before, row)) ?? (standardPending ? 1 : null) : null;
-        const samePlan = !before || before.plan === row.plan && points[i - 1].mult === point.mult;
-        const converted = raw === 0 || i === 0 ? 0 : positive(raw) && samePlan && cohort && positive(ratio) ? raw * ratio / cohort.unitsPerPercent : null;
+        const standardArchive = options.assumeStandard === true && provider === 'codex' && positive(raw) && !!cohort && !!before && !weights.has(debitKey(before, row));
+        const ratio = !positive(raw) || provider === 'claude' ? 1 : cohort && before ? weights.get(debitKey(before, row)) ?? (standardPending || standardArchive ? 1 : null) : null;
+        const samePlan = !before || before.plan === row.plan && (i ? points[i - 1].mult : saved?.mult) === point.mult;
+        const converted = raw === 0 || !before ? 0 : positive(raw) && samePlan && cohort && positive(ratio) ? raw * ratio / cohort.unitsPerPercent : null;
         const nativeDelta = finite(converted) ? converted : null;
         const delta = nativeDelta === 0 ? 0 : finite(nativeDelta) && positive(point.mult) && finite(nativeDelta * point.mult) ? nativeDelta * point.mult : null;
         if (!samePlan) {if (nativeUsage > 0) nativeUsageKnown = false; if (nativeTotal > 0) nativeTotalKnown = false;}
-        if (i && positive(raw)) {
+        if (before && positive(raw)) {
           if (finite(delta)) total += delta; else totalKnown = false;
           if (finite(nativeDelta)) nativeTotal += nativeDelta; else nativeTotalKnown = false;
         }
@@ -184,6 +185,7 @@ function converter(model) {
         const currentTotal = positive(currentMult) && totalKnown ? total / currentMult : nativeTotalKnown ? nativeTotal : null;
         point.creditEstimate = {
           standardPending
+        , ...(standardArchive ? {standardAssumed: true} : {})
         , usage: finite(credit.usage) && usageKnown ? usage : null
         , delta: finite(credit.delta) ? delta : null
         , total: finite(credit.total) && totalKnown ? total : null
@@ -199,6 +201,7 @@ function converter(model) {
         , nativeTotalContinuous: credit.totalContinuous && finite(currentTotal)
         };
       }
+      options.states?.set(key, {usage, total, usageKnown, totalKnown, nativeUsage, nativeTotal, nativeUsageKnown, nativeTotalKnown, previous: mine.at(-1) || saved?.previous, mult: points.at(-1)?.mult ?? null});
     }
   };
 }

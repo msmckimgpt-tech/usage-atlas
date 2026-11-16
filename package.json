@@ -2,7 +2,7 @@
   "name": "usage-atlas"
 , "displayName": "Usage Atlas"
 , "description": "Codex, Claude Code, Antigravity 사용량 기록과 계획"
-, "version": "0.3.4"
+, "version": "0.3.5"
 , "publisher": "local-tools"
 , "license": "SEE LICENSE IN LICENSE"
 , "engines": {
@@ -83,6 +83,15 @@
           , "description": "조회 완료 후 다음 조회까지의 간격(초), 최소 1초. 중복 조회 없이 실행하며 오류 백오프와 서버 Retry-After가 우선 적용됩니다."
           , "order": 20
           }
+        , "usageAtlas.archiveRetentionDays": {
+            "type": "integer"
+          , "default": 365
+          , "minimum": 7
+          , "maximum": 365
+          , "scope": "machine"
+          , "description": "별도 아카이브 원본 보관 기간(일). 기본 365일입니다. 최근 기록의 50,000건 제한과 별개로 보관하고 과거 보기 버튼을 누를 때 필요한 범위만 읽습니다. 만료된 일자는 매일 정리합니다. 이미 삭제되었거나 수집하지 않은 기록은 복원하지 않습니다."
+          , "order": 60
+          }
         , "usageAtlas.adaptiveCollection": {
             "type": "boolean"
           , "default": true
@@ -105,7 +114,7 @@
           , "minimum": 7
           , "maximum": 365
           , "scope": "machine"
-          , "description": "로컬 기록 보관 기간"
+          , "description": "최근 원본·호출 분석 기록의 보관 기간(일). 최근 원본에는 50,000건·파일 크기 제한도 적용됩니다. 장기 원본 보관은 Archive Retention Days에서 별도로 정합니다."
           , "order": 50
           }
         }

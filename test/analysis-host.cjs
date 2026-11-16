@@ -72,6 +72,8 @@ exports.run = async () => {
       try {await onboarding.waitFor({state: 'hidden', timeout: 2000});}
       catch {result.onboardingButtons = await onboarding.getByRole('button').allTextContents(); throw new Error('Isolated profile onboarding remains open');}
     }
+    const {HistoryArchive} = require('../src/history-archive.cjs'), archive = new HistoryArchive(api.storagePath);
+    try {await archive.append(['codex', 'claude'].map(provider => {const row = records.find(r => r.provider === provider), time = now - 120 * 86400000; return {...row, time, windows: {five: {used: 5, reset: time + 18000000}, week: {used: 5, reset: time + 604800000}}};}));} finally {await archive.dispose();}
     const started = Date.now(); await vscode.commands.executeCommand('usageAtlas.open'); result.openCommandMs = Date.now() - started;
     let frame; const deadline = Date.now() + 20000;
     while (!frame && Date.now() < deadline) {
@@ -92,6 +94,10 @@ exports.run = async () => {
       throw new Error('Usage Atlas Webview did not resume');
     };
     const chartRange = () => frame.locator('#ua-chart').evaluate(node => [+node.dataset.domainStart, +node.dataset.domainEnd]);
+    await frame.locator('[data-history-unit="year"]').click();
+    await frame.waitForFunction(time => +document.getElementById('ua-chart').dataset.domainStart <= time, now - 100 * 86400000);
+    assert.ok(api.snapshot().count > records.length, 'archive expansion includes originals absent from the hot store');
+    result.historyArchive = {loadedOnDemand: true, pastDays: 120, preservedHotRecordCount: records.length};
     await frame.locator('#ua-nav-pan').focus(); await frame.locator('#ua-nav-pan').press('+'); await frame.locator('#ua-nav-pan').press('ArrowLeft');
     await frame.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const selectedRange = await chartRange(), previousTransparency = cfg.get('tooltipTransparency', 14);

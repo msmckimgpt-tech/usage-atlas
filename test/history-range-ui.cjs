@@ -11,7 +11,7 @@ const records = ['codex', 'claude'].flatMap(provider => Array.from({length: 121}
   return {v: 1, provider, account: hash(provider), plan: 'fixture', time, windows: {five: {used: i % 100, reset: time + 18000000}, week: {used: i % 100, reset: time + week}}};
 }));
 const data = project(records), initial = {type: 'data', data, now, firstObserved: now - 120 * day, colorMode: 'dark', count: records.length, chartHistoryDays: 30};
-const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.savedState=null;window.acquireVsCodeApi=()=>({getState:()=>null,setState:v=>window.savedState=structuredClone(v),postMessage:()=>{}});</script><script type="application/json" id="ua-initial-data">' + JSON.stringify(initial).replace(/</g, '\\u003c') + '</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(name => '<script>' + read(name) + '</script>').join('') + '</body></html>';
+const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>' + read('style.css') + '</style></head><body>' + read('body.html') + '<script>window.savedState=null;window.messages=[];window.acquireVsCodeApi=()=>({getState:()=>null,setState:v=>window.savedState=structuredClone(v),postMessage:m=>window.messages.push(m)});</script><script type="application/json" id="ua-initial-data">' + JSON.stringify(initial).replace(/</g, '\\u003c') + '</script>' + ['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'provider-visibility.js', 'app.js'].map(name => '<script>' + read(name) + '</script>').join('') + '</body></html>';
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const result = {status: 'RUNNING', cases: [], errors: []};
@@ -68,6 +68,57 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     await restore(null); await expectRange(30);
     await restore(saved); await page.locator('#ua-navigator').dblclick(); await painted(); await expectRange(30);
     result.cases.push('invalid ranges use defaults, expired ranges clamp to retained records, fresh panels and explicit double click still reset');
+    const longRecords = ['codex', 'claude'].flatMap(provider => Array.from({length: 801}, (_, i) => {
+      const time = now - (800 - i) * day;
+      return {v: 1, provider, account: hash(provider), plan: 'fixture', time, windows: {five: {used: i % 100, reset: time + 18000000}, week: {used: i % 100, reset: time + week}}};
+    }));
+    await update({now, data: project(longRecords), firstObserved: now - 800 * day, chartHistoryDays: 7});
+    await page.locator('#ua-navigator').dblclick(); await painted();
+    const baseline = await range(), boxes = await page.locator('#ua-chart').boundingBox();
+    const subtract = (time, unit) => {
+      const d = new Date(time), date = d.getDate();
+      if (unit === 'week') d.setDate(date - 7);
+      else {d.setDate(1); if (unit === 'month') d.setMonth(d.getMonth() - 1); else d.setFullYear(d.getFullYear() - 1); d.setDate(Math.min(date, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));}
+      return +d;
+    };
+    let start = baseline[0];
+    for (const unit of ['week', 'month', 'year']) {
+      await page.locator('[data-history-unit="' + unit + '"]').click(); await painted();
+      start = subtract(start, unit);
+      assert.deepEqual((await range()).slice(0, 2), [start, baseline[1]]);
+      assert.deepEqual(await page.locator('#ua-chart').boundingBox(), boxes);
+    }
+    const expanded = (await range()).slice(0, 2), expandedState = await page.evaluate(() => structuredClone(window.savedState));
+    await restore(expandedState); assert.deepEqual((await range()).slice(0, 2), expanded);
+    await update({now: now + 60000}); assert.deepEqual((await range()).slice(0, 2), expanded);
+    await restore(null); await expectRange(7);
+    result.cases.push('week/calendar-month/calendar-year buttons expand only the past, preserve chart geometry and survive tab reconstruction; closing and reopening uses configured default');
+    await page.locator('[data-history-unit="year"]').focus(); await page.keyboard.press('Enter'); await painted();
+    assert.ok((await range())[0] < now - 300 * day);
+    await page.locator('[data-history-unit="year"]').click(); await page.locator('[data-history-unit="year"]').click(); await painted();
+    assert.equal((await range())[0], model.firstObserved);
+    for (const unit of ['week', 'month', 'year']) assert.equal(await page.locator('[data-history-unit="' + unit + '"]').isDisabled(), true);
+    result.cases.push('keyboard activation works, repeated expansion clamps to oldest retained data and disables exhausted history buttons');
+    await page.locator('#ua-navigator').dblclick(); await painted();
+    await page.locator('[data-history-unit="month"]').click(); await painted();
+    await page.screenshot({path: path.join(root, 'screenshots/history-expand-buttons.png')});
+    await update({data, firstObserved: now - 120 * day, chartHistoryDays: 7, historyArchive: true, historyHasMore: true, historySelection: undefined});
+    await page.locator('#ua-navigator').dblclick(); await painted(); const pendingRange = (await range()).slice(0, 2);
+    await page.locator('[data-history-unit="year"]').click(); await painted();
+    assert.match(await page.locator('#ua-history-status').textContent(), /불러오는 중/);
+    const request = await page.evaluate(() => window.messages.findLast(m => m.type === 'historyExtend'));
+    assert.ok(request.from < now - 365 * day); assert.equal(request.end, pendingRange[1]);
+    await page.evaluate(() => dispatchEvent(new MessageEvent('message', {data: {type: 'historyError', message: 'fixture error'}}))); await painted();
+    assert.deepEqual((await range()).slice(0, 2), pendingRange); assert.equal(await page.locator('[data-history-unit="year"]').isEnabled(), true);
+    await page.locator('[data-history-unit="year"]').click(); await painted();
+    await update({data: project(longRecords), firstObserved: now - 800 * day, historySelection: {version: 1, range: [request.from, request.end]}});
+    assert.deepEqual((await range()).slice(0, 2), [request.from, request.end]);
+    assert.equal(await page.locator('#ua-history-status').textContent(), '');
+    const loaded = await page.evaluate(() => structuredClone(window.savedState)); await restore(loaded);
+    assert.deepEqual((await range()).slice(0, 2), [request.from, request.end]);
+    await page.locator('#ua-nav-pan').focus(); await page.keyboard.press('+'); await painted(); const afterLoadZoom = (await range()).slice(0, 2);
+    await update({now: model.now + 60000}); assert.deepEqual((await range()).slice(0, 2), afterLoadZoom);
+    result.cases.push('archive requests keep layout and range stable while loading, recover from failure, restore tab state and never reapply an already consumed expansion after zoom');
     assert.deepEqual(result.errors, []); result.status = 'PASS';
   } finally {await browser.close(); fs.writeFileSync(path.join(root, 'test-history-range-ui.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));}
 })().catch(error => {console.error(error); process.exitCode = 1;});

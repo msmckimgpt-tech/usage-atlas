@@ -72,6 +72,9 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 #usage-atlas #ua-chart[data-zoom="out"]{cursor:zoom-out}
 #usage-atlas .ua-tip{overflow-wrap:anywhere}
 #usage-atlas .ua-navigator{height:52px;flex-shrink:0;position:relative;touch-action:none;user-select:none;margin:0 18px 6px;cursor:pointer}
+#usage-atlas .ua-history-controls{position:absolute;left:0;top:-10px;display:flex;gap:5px;height:22px;z-index:1}
+#usage-atlas .ua-history-controls button{height:22px;min-height:22px;padding:1px 10px;font-size:11px;line-height:18px}
+#usage-atlas #ua-history-status{align-self:center;font-size:11px;color:var(--ua-muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #usage-atlas .ua-nav-rail{position:absolute;inset:26px 0 10px;background:var(--ua-panel);border:1px solid var(--ua-border);border-radius:8px;pointer-events:none}
 #usage-atlas .ua-nav-thumb{position:absolute;top:20px;height:28px;border:1px solid var(--ua-muted);border-radius:6px;background:var(--ua-hover)}
 #usage-atlas .ua-nav-pan{position:absolute;inset:0;cursor:grab;border-radius:5px}

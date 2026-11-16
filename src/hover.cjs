@@ -28,7 +28,7 @@ function resetRemaining(reset, now) {
   if (reset - now >= 86400000) {const hours = Math.floor((reset - now) / 3600000); return `${Math.floor(hours / 24)}d ${hours % 24}h`;}
   return `${Math.floor(Math.min(1439, minutes) / 60)}h ${Math.min(1439, minutes) % 60}m`;
 }
-function preview(records, {now = Date.now(), dark = false, capacities = [], collectors = {}, maxGap = 1800000, staleAfterMs = 900000, codexCreditDecimals = 4, claudeUsdDecimals = 4, projection, visibility = {}, conversion = null, forecastEnabled = true, creditBasis = 'subscription'} = {}) {
+function preview(records, {now = Date.now(), dark = false, capacities = [], collectors = {}, maxGap = 1800000, staleAfterMs = 900000, codexCreditDecimals = 4, claudeUsdDecimals = 4, projection, visibility = {}, conversion = null, forecastEnabled = true, creditBasis = 'subscription', antigravitySmoothingMinutes = 5} = {}) {
   const start = now - duration, width = 360, right = width - 10;
   // SVG 이미지 생성은 DOM 없이 수행하므로 11px 글자 폭을 보수적으로 계산한다.
   const measure = text => [...text].reduce((sum, char) => sum + (char.charCodeAt(0) > 127 ? 11 : char === ' ' ? 3.5 : 7), 0);
@@ -37,7 +37,7 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
   const projected = projection || project(history, capacities, maxGap, (...args) => {convert(...args); bill(...args);});
   const providers = Object.keys(projected).filter(id => providerCatalog.enabled(id, projected[id], visibility)), names = Object.fromEntries(providers.map(id => [id, providerCatalog.previewName(id, projected[id]?.last?.label)]));
   const legendRows = providers.length > 2 ? providers.length : 1, top = 28 + (legendRows - 1) * 16, height = 192 + (legendRows - 1) * 16;
-  const quotas = providers.flatMap(id => ['five', 'week'].flatMap(w => chartGraphs.quota(projected[id], id, w))).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
+  const quotas = providers.flatMap(id => ['five', 'week'].flatMap(w => chartGraphs.quota(projected[id], id, w, {antigravitySmoothingMinutes}))).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const credits = providers.flatMap(id => creditGraphs.series(projected[id], id, {creditBasis})).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const allSeries = [...quotas, ...credits].map(s => ({...s, bridges: gaps.bridges(s.points, 'y')}));
   const {maximum} = chartGraphs.limits(allSeries.filter(series => !series.billing), [start, now]);
@@ -88,7 +88,7 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
         if (p.time >= start) visible++;
         prev = p;
       }
-      for (const event of provider?.events || []) {
+      for (const event of chartGraphs.events(provider, id, {antigravitySmoothingMinutes})) {
         if (event.time > now || event.window !== w || !['scheduled-reset', 'early-reset'].includes(event.kind)) continue;
         const time = event.kind === 'scheduled-reset' ? event.previousReset : event.time;
         if (w === 'five' && time >= start && time <= now) resetLines.set(x(time).toFixed(1), {time, kind: event.kind});

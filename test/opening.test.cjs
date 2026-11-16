@@ -53,6 +53,22 @@ async function harness(t, options = {}) {
   const bootstrap = panel => JSON.parse(panel.webview.html.match(/id="ua-initial-data"[^>]*>(.*?)<\/script>/s)[1]);
   return {api, theme: vscode.window.activeColorTheme, commands, replaceStored(value) {records = value;}, open: commands.get('usageAtlas.open'), panels, calls, release, bootstrap, plan, changes, settings, previewOptions, markdowns, appendStored() {records = [...records, {...records[0], time: now + 2, windows: {five: null, week: {used: 33, reset: now + 604800000}}}];}};
 }
+test('AGY smoothing settings update both views immediately without recollection or changing projection data', async t => {
+  const h = await harness(t);
+  await h.open(); const panel = h.panels[0]; await panel.receive({type: 'ready'});
+  const before = JSON.stringify(h.api.snapshot().data);
+  assert.equal(h.api.snapshot().antigravitySmoothingMinutes, 5);
+  for (const minutes of [0, 15, 60]) {
+    h.settings.antigravitySmoothingMinutes = minutes;
+    for (const change of h.changes) await change({affectsConfiguration: key => key === 'usageAtlas' || key === 'usageAtlas.antigravitySmoothingMinutes'});
+    assert.equal(h.api.snapshot().antigravitySmoothingMinutes, minutes);
+    assert.equal(panel.messages.at(-1).antigravitySmoothingMinutes, minutes);
+    assert.equal(h.previewOptions.at(-1).antigravitySmoothingMinutes, minutes);
+    assert.equal(JSON.stringify(h.api.snapshot().data), before);
+  }
+  assert.equal(h.calls.length, 0);
+});
+
 test('preview model cells contain only compact names without collector errors or record-delay text', async t => {
   const now = Date.now(), message = 'Claude 구독 계정 로그인이 필요합니다.';
   const records = ['codex', 'claude', 'antigravity-5d72436256ada538'].map(provider => ({v: 1, provider, account: core.hash(provider), plan: 'fixture', time: now - 3600000, ...(provider.startsWith('antigravity-') ? {label: 'Gemini'} : {}), windows: {five: null, week: {used: 42, reset: now + 86400000}}}));

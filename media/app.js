@@ -125,7 +125,7 @@
     const environment = `${model.host || '로컬'} · 기록 ${model.count ?? 0}건${model.storagePath ? ' · ' + model.storagePath : ''}`;
     el('environment').textContent = environment; el('environment').title = environment;
   }
-  const quota = (id, w) => chartGraphs.quota(model.data[id], id, w, {...state, credit: state.credit && state.creditBasis !== 'billing'});
+  const quota = (id, w) => chartGraphs.quota(model.data[id], id, w, {...state, antigravitySmoothingMinutes: model.antigravitySmoothingMinutes, credit: state.credit && state.creditBasis !== 'billing'});
 
   function syncProviders() {
     const extra = Object.keys(model.data).filter(id => providerVisibility.isAntigravity(id) || id === 'antigravity');
@@ -193,7 +193,7 @@
     const data = visible.flatMap(id => ['five', 'week'].flatMap(w => quota(id, w))).map(s => ({...s, bridges:gaps.bridges(s.points, 'y')}));
     const all = ids.flatMap(id => Object.values(model.data[id]?.windows || {}).flat());
     const resets = visible.flatMap(id => ['five', 'week'].map(w => ({id, w, time: model.data[id]?.last?.windows[w]?.reset}))).filter(r => number(r.time) && r.time > model.now);
-    const events = visible.flatMap(id => (model.data[id]?.events || []).map(e => ({...e, id, w: e.window}))).filter(e => e.kind !== 'scheduled-reset');
+    const events = visible.flatMap(id => chartGraphs.events(model.data[id], id, {...state, antigravitySmoothingMinutes: model.antigravitySmoothingMinutes}).map(e => ({...e, id, w: e.window}))).filter(e => e.kind !== 'scheduled-reset');
     const start = model.firstObserved ?? d3.min(all, p => p.time) ?? model.now;
     // 첫 기록이 최근이어도 현재를 중앙에 놓도록 과거 빈 구간을 확보한다.
     const full = [Math.min(start, model.now - week), model.now + week];

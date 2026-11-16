@@ -44,6 +44,36 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.ok(await page.locator('#ua-chart').evaluate(n => n.getBoundingClientRect().height >= 200));
     await page.screenshot({path: path.join(root, 'screenshots/antigravity-narrow.png')});
+    const noisy = Array.from({length: 121}, (_, i) => ({v: 1, provider: ids[0], account: hash('stable-ui'), plan: 'one', label: 'Gemini', time: now - (120 - i) * 60000, windows: {
+        five: {used: i < 60 ? 10 + i * .15 + (i % 2 ? .4 : 0) : (i - 60) * .15 + (i % 2 ? .4 : 0), reset: i < 60 ? now - hour : now + 3 * hour}
+      , week: {used: 30 + i * .2 + (i % 2 ? .4 : 0), reset: now + 4 * 86400000}
+    }}));
+    const projection = project(noisy), apply = async minutes => {
+      await page.evaluate(m => dispatchEvent(new MessageEvent('message', {data: m})), {...model, data: projection, antigravitySmoothingMinutes: minutes}); await stable();
+    };
+    await page.setViewportSize({width: 1440, height: 920});
+    await page.locator('#ua-mode').selectOption('usage'); await page.locator('#ua-basis').selectOption('current'); await page.locator('#ua-credit').uncheck();
+    await apply(0);
+    await page.locator('#ua-nav-pan').focus();
+    for (let i = 0; i < 6; i++) {await page.keyboard.press('+'); await stable();}
+    const rawChunks = await page.locator('#ua-chart [data-series="' + ids[0] + '-week"]').count(); assert.ok(rawChunks > 30);
+    await page.screenshot({path: path.join(root, 'screenshots/antigravity-noisy-raw.png')});
+    const range = await page.evaluate(() => window.saved.range), chartBox = await page.locator('#ua-chart').boundingBox();
+    await apply(5);
+    assert.equal(await page.locator('#ua-chart [data-series="' + ids[0] + '-week"]').count(), 1);
+    assert.equal(await page.locator('#ua-chart [data-series="' + ids[0] + '-five"]').count(), 2, 'the real reset stays separated');
+    assert.equal(await page.locator('[data-event-kind="decrease"]').count(), 0);
+    assert.ok(await page.locator('[data-cycle-end="' + ids[0] + '-five"]').count());
+    const rendered = await page.locator('#ua-chart [data-series="' + ids[0] + '-week"]').evaluate(n => n.__data__.map(p => ({time: p.time, y: p.y})));
+    const expected = require('../media/chart-series.js').quota(projection[ids[0]], ids[0], 'week')[0].points.map(p => ({time: p.time, y: p.y}));
+    assert.deepEqual(rendered, expected); assert.equal(rendered.at(-1).y, noisy.at(-1).windows.week.used);
+    const target = await page.locator('#ua-chart [data-series="' + ids[0] + '-week"]').evaluate(n => {const p = n.getPointAtLength(n.getTotalLength() * .5), q = new DOMPoint(p.x, p.y).matrixTransform(n.getScreenCTM()); return {x: q.x, y: q.y};});
+    await page.mouse.move(target.x, target.y); await page.waitForSelector('#ua-tooltip:not([hidden])');
+    assert.match(await page.locator('#ua-tooltip').textContent(), /주간.*≈/);
+    assert.deepEqual(await page.evaluate(() => window.saved.range), range); assert.deepEqual(await page.locator('#ua-chart').boundingBox(), chartBox);
+    await page.screenshot({path: path.join(root, 'screenshots/antigravity-smoothed.png')});
+    await apply(0); assert.equal(await page.locator('#ua-chart [data-series="' + ids[0] + '-week"]').count(), rawChunks);
+    result.smoothing = 'PASS: raw fragments become continuous, actual reset stays split, approximate tooltip and latest value match shared preview calculation, OFF restores original view without moving UI/range';
     assert.deepEqual(result.errors, []);
     result.status = 'PASS'; result.groups = 3; result.modes = 3; result.creditNoShift = true; result.independentToggle = true; result.responsive = true;
   } finally {await browser.close(); fs.writeFileSync(path.join(root, 'test-antigravity-ui.json'), JSON.stringify(result, null, 2));}

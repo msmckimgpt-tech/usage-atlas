@@ -47,7 +47,14 @@ function sanitize(s) {
   return out;
 }
 function series(records, provider, key, capacities = [], maxGap = 1800000) {
-  return quotaSeries(currentRecords(records, provider), key, capacities, maxGap);
+  return quotaSeries(currentRecords(records, provider), key, capacities, maxGap, undefined, displayAccountBreaks(records, provider));
+}
+function displayAccountBreaks(records, provider) {
+  if (!catalog.isAntigravity(provider)) return;
+  const list = records.filter(s => s.provider === provider), breaks = new Set();
+  if (list.some((s, i) => i > 0 && s.time < list[i - 1].time)) list.sort((a, b) => a.time - b.time);
+  for (let i = 1; i < list.length; i++) if (list[i].account !== list[i - 1].account) breaks.add(list[i].time);
+  return breaks;
 }
 function currentRecords(records, provider) {
   const list = records.filter(s => s.provider === provider);
@@ -74,7 +81,7 @@ function windowTransitions(list, key) {
   });
 }
 const isReset = event => event?.kind === 'scheduled-reset' || event?.kind === 'early-reset';
-function quotaSeries(list, key, capacities, maxGap, transitions = windowTransitions(list, key)) {
+function quotaSeries(list, key, capacities, maxGap, transitions = windowTransitions(list, key), displayBreaks) {
   const {provider, account} = list.at(-1) || {};
   const byPlan = new Map(), positions = new Map();
   for (const c of capacities) if (c.provider === provider && c.account === account && c.window === key) {
@@ -83,7 +90,7 @@ function quotaSeries(list, key, capacities, maxGap, transitions = windowTransiti
   }
   // 동일 시각의 배율은 기존처럼 먼저 저장된 항목이 우선한다.
   for (const [plan, caps] of byPlan) {caps.sort((a, b) => a.time - b.time); byPlan.set(plan, caps.filter((c, i) => i === 0 || c.time !== caps[i - 1].time));}
-  let prev, watermark, cumulative = 0, nativeCumulative = 0, cumulativeKnown = true, cumulativeEstimated = false, segment = 0, cumulativeSegment = 0;
+  let prev, watermark, cumulative = 0, nativeCumulative = 0, cumulativeKnown = true, cumulativeEstimated = false, segment = 0, cumulativeSegment = 0, displayCycle = 0;
   return list.map((s, i) => {
     const w = s.windows[key];
     const caps = byPlan.get(s.plan) || [];
@@ -97,6 +104,7 @@ function quotaSeries(list, key, capacities, maxGap, transitions = windowTransiti
     // 초기화·요금제 변경·감소·수집 공백은 소비량으로 추정하지 않는다.
     const valid = prev && w && prev.w && Math.abs(w.reset - prev.w.reset) <= 60000 && s.time < prev.w.reset && s.time - prev.time <= maxGap && s.plan === prev.plan && mult === prev.mult && w.used >= prev.w.used;
     const event = transitions[i], estimatedDelta = isReset(event) && w.used > 0;
+    if (prev && (prev.plan !== s.plan || prev.mult !== mult || isReset(event) || displayBreaks?.has(s.time))) displayCycle++;
     if (prev && (prev.plan !== s.plan || prev.mult !== mult || isReset(event) || event?.kind === 'decrease')) segment++;
     // 누적 보간은 초기화 경계만 넘고 계정 내 요금제·배율·보정 경계는 유지한다.
     if (prev && (prev.plan !== s.plan || prev.mult !== mult || event?.kind === 'decrease')) cumulativeSegment++;
@@ -109,7 +117,7 @@ function quotaSeries(list, key, capacities, maxGap, transitions = windowTransiti
     // 원본 증가분은 보존하고 입력 배율로 기본 용량 누적을 계산한다.
     if (delta !== null) {nativeCumulative += delta; if (mult !== null) cumulative += delta * mult; else if (delta > 0) cumulativeKnown = false;}
     const totalContinuous = !!(prev && w && prev.w && s.time - prev.time <= maxGap);
-    const p = {time: s.time, value: w?.used ?? null, reset: w?.reset ?? null, mult, segment, cumulativeSegment, delta, cumulative, nativeCumulative, cumulativeKnown, totalContinuous, plan: s.plan, continuous: !!valid, ...(event ? {event} : {}), ...(estimatedDelta ? {estimatedDelta: true} : {}), ...(cumulativeEstimated ? {cumulativeEstimated: true} : {}), ...(recoveryExcluded > 0 ? {recoveryExcluded, recoveryPeak: peak} : {})};
+    const p = {time: s.time, value: w?.used ?? null, reset: w?.reset ?? null, mult, segment, cumulativeSegment, ...(catalog.isAntigravity(provider) ? {displayCycle} : {}), delta, cumulative, nativeCumulative, cumulativeKnown, totalContinuous, plan: s.plan, continuous: !!valid, ...(event ? {event} : {}), ...(estimatedDelta ? {estimatedDelta: true} : {}), ...(cumulativeEstimated ? {cumulativeEstimated: true} : {}), ...(recoveryExcluded > 0 ? {recoveryExcluded, recoveryPeak: peak} : {})};
     if (w) watermark = {plan: s.plan, mult, reset: w.reset, used: Math.max(peak, w.used)};
     prev = {w, time: s.time, plan: s.plan, mult};
     return p;
@@ -136,10 +144,11 @@ function ledgerSeries(list, provider, maxGap) {
 function project(records, capacities = [], maxGap = 1800000, enrich, forecast) {
   return Object.fromEntries(catalog.ids(records).map(id => {
     const mine = currentRecords(records, id), ledger = ledgerSeries(mine, id, maxGap);
+    const displayBreaks = displayAccountBreaks(records, id);
     const transitions = Object.fromEntries(['five', 'week'].map(w => [w, windowTransitions(mine, w)]));
     const credit = creditValues(mine, ledger.points, transitions.week);
     const attach = points => {for (let i = 0; i < points.length; i++) points[i].credit = credit[i]; return points;};
-    const windows = Object.fromEntries(['five', 'week'].map(w => [w, attach(quotaSeries(mine, w, capacities, maxGap, transitions[w]))]));
+    const windows = Object.fromEntries(['five', 'week'].map(w => [w, attach(quotaSeries(mine, w, capacities, maxGap, transitions[w], displayBreaks))]));
     attach(ledger.points);
     enrich?.(id, mine, windows, ledger.points);
     const forecastValue = forecast?.(id, mine, windows, records);

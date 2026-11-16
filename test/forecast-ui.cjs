@@ -142,7 +142,7 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     await page.setViewportSize({width: 1440, height: 900}); await page.locator('#ua-mode').selectOption('usage'); await page.locator('#ua-basis').selectOption('current'); await update({data: ranged});
     await page.screenshot({path: path.join(root, 'screenshots/forecast-monotone-range-wide.png')});
     report.cases.push('both providers and windows: error-band data and actual SVG boundaries stay nondecreasing in usage/total, current/base, 1440/360px');
-    const fallbackNow = Date.parse('2026-11-13T12:00:00+09:00'), hour = 3600000;
+    const fallbackNow = patternNow, hour = 3600000;
     const fallbackRecords = ['codex', 'claude', 'antigravity-5d72436256ada538'].flatMap(id => {
       const source = require('./pattern-fixture.cjs').records(fallbackNow, id);
       source[source.length - 3].time = fallbackNow - 4 * hour;

@@ -63,15 +63,15 @@ test('missing future weekday/hour evidence falls back to the recent rate instead
   assert.ok(value.pattern); assert.ok(value.trajectory.at(-1).value === 100);
   assert.equal(value.eta, now + 3 * hour);
 });
-test('reset-first preview remainder exactly matches the corrected piecewise page endpoint for both providers/windows', () => {
+test('reset-first preview usage exactly matches the corrected piecewise page endpoint for both providers/windows', () => {
   const input = ['codex', 'claude'].flatMap(id => fixture.records(now, id, 3));
   const data = project(input, [], undefined, undefined, (_id, _mine, windows) => forecast.provider(windows));
   const mini = preview(input, {now, projection: data});
   for (const [i, id] of ['codex', 'claude'].entries()) for (const w of ['five', 'week']) {
     const value = data[id].forecast[w], curve = forecast.curve(value, data[id].windows[w].at(-1), {}, now);
     assert.equal(value.state, 'reset-first'); assert.ok(curve.points.length > 2);
-    assert.equal(mini.summaries[i].forecasts[w].remainingPercent, 100 - curve.points.at(-1).value);
-    assert.equal(mini.summaries[i].forecasts[w].text, '≈10%');
+    assert.equal(mini.summaries[i].forecasts[w].usedPercent, curve.points.at(-1).value);
+    assert.equal(mini.summaries[i].forecasts[w].text, '≈90%');
   }
 });
 test('corrected curves share ETA across base, cumulative and credit displays; delta never invents a future interval', () => {
@@ -132,12 +132,12 @@ test('a single observed date still cannot train a pooled hour; unavailable hours
   const value = tiered([3]).codex.forecast.five;
   assert.equal(value.pattern, undefined); assert.equal(value.eta, now + 2.5 * hour);
 });
-test('observed zero historical use remains valid at the broadest tier and agrees with reset remainder', () => {
+test('observed zero historical use remains valid at the broadest tier and agrees with reset usage', () => {
   const source = [...history([2, 1], 0), ...fixture.records(now, 'codex', 3).slice(-3)].sort((a, b) => a.time - b.time);
   const data = project(source, [], undefined, undefined, (_id, _mine, windows) => forecast.provider(windows));
   const value = data.codex.forecast.five, curve = forecast.curve(value, data.codex.windows.five.at(-1), {}, now);
   assert.equal(value.pattern.tierMatchedMs.hour, 3 * hour); assert.equal(value.state, 'reset-first');
-  assert.equal(curve.points.at(-1).value, 80); assert.equal(preview(source, {now, projection: data}).summaries[0].forecasts.five.text, '≈20%');
+  assert.equal(curve.points.at(-1).value, 80); assert.equal(preview(source, {now, projection: data}).summaries[0].forecasts.five.text, '≈80%');
 });
 
 

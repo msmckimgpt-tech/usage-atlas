@@ -271,9 +271,9 @@
     if (status.state === 'predicted') return {...status, label: '사용 가능', remainingMs: value.eta - now};
     if (status.state === 'exhausted') return {...status, label: '사용 가능', text: '0h 0m', remainingMs: 0};
     const used = ['reset-first', 'inactive'].includes(status.state) ? atReset(value) : null;
-    if (used !== null) {
-      const remainingPercent = 100 - used, rounded = Math.round(remainingPercent * 10) / 10;
-      return {...status, label: '초기화 잔여', text: (remainingPercent > 0 && rounded === 0 ? '<0.1' : '≈' + rounded) + '%', remainingPercent};
+    if (finite(used) && used >= 0 && used <= 100) {
+      const rounded = Math.round(used * 10) / 10;
+      return {...status, label: '도달 사용량', text: (used > 0 && rounded === 0 ? '<0.1' : used < 100 && rounded === 100 ? '>99.9' : '≈' + rounded) + '%', usedPercent: used};
     }
     return {...status, label: '예상', text: '-'};
   }

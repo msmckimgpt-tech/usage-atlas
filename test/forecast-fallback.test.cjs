@@ -39,7 +39,7 @@ test('archive fallback survives raw history compaction and agrees with the previ
   const mini = preview(recentRows, {now, projection: {codex: recent}}).summaries[0].forecasts.week;
   const curve = forecast.curve(value, recent.windows.week.at(-1), {}, now);
   if (value.state === 'predicted') assert.equal(mini.eta, curve.points.at(-1).time);
-  else assert.equal(mini.remainingPercent, 100 - curve.points.at(-1).value);
+  else assert.equal(mini.usedPercent, curve.points.at(-1).value);
 });
 test('usage corrections restart only the forecast at the latest value and keep high-water cumulative totals', () => {
   const records = fixture.records(now, 'antigravity-5d72436256ada538');

@@ -91,7 +91,7 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     await update({now: now + 16 * minute}); assert.equal(await page.locator('[data-forecast]').count(), 0); assert.equal(await page.locator('[data-forecast-trend]').count(), 0);
     const resetRecords = records.map(r => ({...r, windows: {five: {...r.windows.five, reset: now + minute}, week: {...r.windows.week, reset: now + minute}}}));
     const resetData = calculate(resetRecords); await update({data: resetData}); assert.equal(await page.locator('[data-forecast]').count(), 0);
-    assert.equal(preview(resetRecords, {now, projection: resetData}).summaries[0].forecasts.five.text, '≈49.5%');
+    assert.equal(preview(resetRecords, {now, projection: resetData}).summaries[0].forecasts.five.text, '≈50.5%');
     assert.equal(await page.locator('[data-forecast-trend][data-end-kind="reset"]').count(), 4); assert.equal(await page.locator('[data-forecast-boundary]').count(), 4);
     report.cases.push('disabled/stale hide curves; reset-first trends stop at the reset boundary without an exhaustion marker');
     const patternNow = Math.floor(now / 3600000) * 3600000;

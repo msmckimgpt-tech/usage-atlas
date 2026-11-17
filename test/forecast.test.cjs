@@ -157,47 +157,49 @@ test('preview exhaustion shows the remaining usable time and preserves the page 
   assert.equal(later.text, '≈1h 39m'); assert.equal(later.eta, first.eta);
   assert.equal(forecast.summary({...value, eta: now + 25 * hour, reset: now + 30 * hour}, now).text, '≈1d 1h');
 });
-test('preview reset remainder equals the page forecast endpoint for both providers and quota windows', () => {
+test('preview reset usage equals the page forecast endpoint for both providers and quota windows', () => {
   const source = ['codex', 'claude'].flatMap(provider => rows().map(r => ({...r, provider, windows: {five: {...r.windows.five, reset: now + 30 * minute}, week: {...r.windows.week, reset: now + 30 * minute}}})));
   const data = project(source, [], undefined, undefined, (_id, _mine, windows) => forecast.provider(windows));
   const mini = preview(source, {now, projection: data});
   for (const [i, id] of ['codex', 'claude'].entries()) for (const w of ['five', 'week']) {
     const result = mini.summaries[i].forecasts[w], trend = forecast.curve(data[id].forecast[w], data[id].windows[w].at(-1), {}, now);
-    assert.equal(result.label, '초기화 잔여'); assert.equal(result.text, '≈35%'); assert.equal(result.remainingPercent, 100 - trend.points[1].value);
-    assert.equal(forecast.summary(data[id].forecast[w], now + minute).remainingPercent, result.remainingPercent);
+    assert.equal(result.label, '도달 사용량'); assert.equal(result.text, '≈65%'); assert.equal(result.usedPercent, trend.points[1].value);
+    assert.equal(forecast.summary(data[id].forecast[w], now + minute).usedPercent, result.usedPercent);
   }
 });
-test('preview tie shows zero remainder while an already exhausted reading shows zero usable time', () => {
+test('preview tie shows full usage while an already exhausted reading shows zero usable time', () => {
   const value = predict(rows());
   const tie = forecast.summary({...value, state: 'reset-first', eta: null, reset: value.eta}, now);
-  assert.equal(tie.text, '≈0%'); assert.equal(tie.remainingPercent, 0);
+  assert.equal(tie.label, '도달 사용량'); assert.equal(tie.text, '≈100%'); assert.equal(tie.usedPercent, 100);
   const full = forecast.summary(predict(rows(Array(61).fill(100))), now);
   assert.equal(full.label, '사용 가능'); assert.equal(full.text, '0h 0m'); assert.equal(full.remainingMs, 0);
 });
-test('observed zero consumption shows the projected unused quota at reset without inventing an exhaustion', () => {
+test('observed zero consumption preserves projected usage at reset without inventing an exhaustion', () => {
   const value = predict(rows(Array(61).fill(20))), result = forecast.summary(value, now);
-  assert.equal(result.label, '초기화 잔여'); assert.equal(result.text, '≈80%'); assert.equal(result.remainingPercent, 80);
+  assert.equal(result.label, '도달 사용량'); assert.equal(result.text, '≈20%'); assert.equal(result.usedPercent, 20);
   assert.equal(result.eta, undefined); assert.equal(forecast.present(value, now).state, 'inactive');
 });
-test('preview cannot derive a reset remainder from stale, invalid or uncertain observations', () => {
+test('preview cannot derive reset usage from stale, invalid or uncertain observations', () => {
   const value = {...predict(rows()), state: 'reset-first', eta: null, reset: now + 30 * minute};
-  for (const invalid of [undefined, {...value, state: 'insufficient'}, {...value, state: 'recovery'}, {...value, ratePerHour: null}, {...value, used: -1}, {...value, ratePerHour: Infinity}, {...value, observedAt: now + 1}, {...value, reset: now}]) {
-    const result = forecast.summary(invalid, now); assert.equal(result.text, '-'); assert.equal(result.remainingPercent, undefined);
+  for (const invalid of [undefined, {...value, state: 'insufficient'}, {...value, state: 'recovery'}, {...value, ratePerHour: null}, {...value, used: -1}, {...value, ratePerHour: Infinity}, {...value, observedAt: now + 1}, {...value, reset: now}, {...value, trajectory: [{time: value.reset}]}, {...value, trajectory: [{time: value.reset, value: 101}]}]) {
+    const result = forecast.summary(invalid, now); assert.equal(result.text, '-'); assert.equal(result.usedPercent, undefined);
   }
   assert.equal(forecast.summary(value, now + 16 * minute).text, '-');
 });
-test('tiny positive reset remainders are distinguished from a projected zero', () => {
+test('reset usage formatting distinguishes tiny usage and near-exhaustion from exact endpoints', () => {
   const value = {...predict(rows()), state: 'reset-first', eta: null, reset: now + 30 * minute};
-  const result = forecast.summary({...value, used: 84.96}, now);
-  assert.ok(result.remainingPercent > 0); assert.equal(result.text, '<0.1%');
+  for (const [used, text] of [[0, '≈0%'], [.04, '<0.1%'], [99.96, '>99.9%'], [100, '≈100%']]) {
+    const result = forecast.summary({...value, trajectory: [{time: value.observedAt, value: 0}, {time: value.reset, value: used}]}, now);
+    assert.equal(result.usedPercent, used); assert.equal(result.text, text);
+  }
 });
-test('preview remainder is subscription-relative regardless of extra credit or x5/x20 capacity and respects OFF', () => {
+test('preview reset usage is subscription-relative regardless of extra credit or x5/x20 capacity and respects OFF', () => {
   const source = rows().map(r => ({...r, windows: {five: {...r.windows.five, reset: now + 30 * minute}, week: r.windows.week}}));
   for (const mult of [1, 5, 20]) {
     const capacities = [{provider: 'codex', account: source[0].account, plan: 'test', window: 'five', mult, time: source[0].time}];
     const data = project(source, capacities, undefined, undefined, (_id, _mine, windows) => forecast.provider(windows));
     const result = preview(source, {now, projection: data}).summaries[0].forecasts.five;
-    assert.equal(result.remainingPercent, 35); assert.equal(result.text, '≈35%');
+    assert.equal(result.usedPercent, 65); assert.equal(result.text, '≈65%');
     assert.equal(preview(source, {now, projection: data, forecastEnabled: false}).summaries[0].forecasts, undefined);
   }
 });

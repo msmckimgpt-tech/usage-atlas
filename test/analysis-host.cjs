@@ -316,8 +316,8 @@ exports.run = async () => {
     await api.refresh(); await frame.waitForFunction(() => document.querySelectorAll('[data-forecast-boundary]').length === 2);
     await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible'});
     assert.match(await forecastHover.textContent(), /사용 가능 ≈/);
-    assert.match(await forecastHover.locator('tbody tr').nth(1).textContent(), /초기화 잔여 ≈35%.*초기화 잔여 ≈57.5%/);
-    assert.doesNotMatch(await forecastHover.textContent(), /초기화 우선|만료 우선|소진 도달/);
+    assert.match(await forecastHover.locator('tbody tr').nth(1).textContent(), /도달 사용량 ≈65%.*도달 사용량 ≈42.5%/);
+    assert.doesNotMatch(await forecastHover.textContent(), /초기화 잔여|초기화 우선|만료 우선|소진 도달/);
     const tableFit = await forecastHover.locator('table').evaluate(table => ({width: table.getBoundingClientRect().width, overflow: [...table.querySelectorAll('td')].some(cell => cell.scrollWidth > cell.clientWidth + 1)}));
     assert.ok(tableFit.width <= 362); assert.equal(tableFit.overflow, false);
     await forecastImage.evaluate(n => n.decode()); await forecastHover.screenshot({path: path.join(root, 'screenshots/forecast-preview-outcomes-native.png')});

@@ -323,7 +323,7 @@ test('forecast settings share a cached unthinned estimate between page and previ
   assert.equal(payload.forecastEnabled, true); assert.equal(value.state, 'predicted');
   assert.equal(value.eta, h.previewOptions.at(-1).projection.codex.forecast.five.eta);
   assert.match(h.markdowns.at(-1).value, /사용 가능 ≈1h 40m/);
-  assert.match(h.markdowns.at(-1).value, /초기화 잔여 ≈35%/);
+  assert.match(h.markdowns.at(-1).value, /도달 사용량 ≈65%/);
   assert.doesNotMatch(h.markdowns.at(-1).value, /초기화 우선|만료 우선/);
   assert.equal(h.api.snapshot().data.codex.forecast, payload.data.codex.forecast, 'unchanged observations reuse the forecast object');
   h.settings.forecastFiveLookbackMinutes = 30;
@@ -332,7 +332,7 @@ test('forecast settings share a cached unthinned estimate between page and previ
   h.settings.forecastEnabled = false;
   for (const change of h.changes) change({affectsConfiguration: section => section === 'usageAtlas'});
   assert.equal(h.api.snapshot().data.codex.forecast, undefined); assert.equal(h.api.snapshot().forecastEnabled, false);
-  assert.doesNotMatch(h.markdowns.at(-1).value, /사용 가능|초기화 잔여/); assert.equal(h.calls.length, 0);
+  assert.doesNotMatch(h.markdowns.at(-1).value, /사용 가능|도달 사용량|초기화 잔여/); assert.equal(h.calls.length, 0);
 });
 
 

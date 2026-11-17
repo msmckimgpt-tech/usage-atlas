@@ -159,7 +159,8 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
   #usage-atlas .ua-details-footer{padding:6px 10px}
 }
 
-#usage-atlas .ua-muted-trace{opacity:.14}
+#usage-atlas .ua-muted-trace{opacity:calc(var(--ua-trace-opacity,1) * .18)}
+#usage-atlas .ua-highlight-trace{opacity:1;stroke-width:1.8}
 #usage-atlas .ua-provider[aria-pressed=true]{border-color:var(--c)}
 
 #usage-atlas .ua-conversation-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}

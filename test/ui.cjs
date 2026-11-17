@@ -82,11 +82,13 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
       return rows;
     };
     const hoverTrace = async (key, ratio = .5) => {
+      let hoveredPoint;
       const candidates = await page.locator(`path[data-series="${key}"]`).filter({hasNot: page.locator('title')}).evaluateAll((nodes, ratio) => nodes.filter(n=>n.__data__?.length > 2).flatMap(node=>[ratio,.15,.3,.45,.6,.75,.9].map(r=>{
         const p = node.getPointAtLength(node.getTotalLength() * r), matrix = node.getScreenCTM();
         return {x: p.x * matrix.a + p.y * matrix.c + matrix.e, y: p.x * matrix.b + p.y * matrix.d + matrix.f};
       })), ratio);
       for (const point of candidates) {
+        hoveredPoint = point;
         await page.mouse.move(point.x, point.y); await page.waitForTimeout(20);
         const nativeMatch = key.includes('-credit') && (await page.locator('#ua-tooltip').textContent()).includes((key.startsWith('codex') ? 'Codex' : 'Claude Code') + ' / ' + (key.endsWith('-five') ? '5시간 환산' : '주간 환산') + ' / ');
         if ((nativeMatch || await page.locator('#ua-tooltip').getAttribute('data-series')===key) && !await page.locator('#ua-tooltip').getAttribute('data-detail')) break;
@@ -97,8 +99,23 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
       assert.doesNotMatch(await page.locator('#ua-tooltip').textContent(), /미제공|관측 없음/);
       assert.equal(await page.locator('#ua-tooltip').getAttribute('data-detail'), null);
       await compactTooltip();
+      const active = await page.locator('#ua-chart').getAttribute('data-highlight-series');
+      assert.equal(active, await page.locator('#ua-tooltip').getAttribute('data-series'));
+      const emphasis = await page.locator('[data-series],[data-interpolated]').evaluateAll((nodes, active) => nodes.map(node => ({key: node.dataset.series || node.dataset.interpolated, active: node.classList.contains('ua-highlight-trace'), muted: node.classList.contains('ua-muted-trace'), opacity: +getComputedStyle(node).opacity, width: +getComputedStyle(node).strokeWidth.replace('px', '')})), active);
+      assert.ok(emphasis.some(node => node.key === active && node.active && node.opacity === 1 && node.width >= 1.8));
+      assert.ok(emphasis.filter(node => node.key !== active).every(node => node.muted && node.opacity <= .18));
+      const selected = await page.locator('.ua-highlight-trace[data-series]').first();
+      await selected.evaluate(node => {window.hoverNode = node; window.hoverShape = node.getAttribute('d'); window.hoverWrites = 0; window.hoverObserver?.disconnect(); window.hoverObserver = new MutationObserver(m => window.hoverWrites += m.length); window.hoverObserver.observe(node, {attributes: true, attributeFilter: ['class', 'style', 'd']});});
+      await page.mouse.move(hoveredPoint.x, hoveredPoint.y); await page.waitForTimeout(20);
+      assert.equal(await page.evaluate(() => window.hoverNode.isConnected && window.hoverNode.getAttribute('d') === window.hoverShape && window.hoverWrites === 0), true, 'same-series pointer moves retain SVG nodes/geometry without repeated style writes');
+      await page.evaluate(() => window.hoverObserver.disconnect());
     };
-    await hoverTrace('codex-week'); await hoverTrace('claude-five', .7);
+    await hoverTrace('codex-week');
+    assert.equal(await page.locator('[data-series="codex-five"]').first().evaluate(node => node.classList.contains('ua-muted-trace')), true, 'same-provider windows remain separate highlight targets');
+    await page.evaluate(() => dispatchEvent(new MessageEvent('message', {data: window.uiModel})));
+    await page.waitForTimeout(40);
+    assert.equal(await page.locator('#ua-chart').getAttribute('data-highlight-series'), 'codex-week', 'stationary cursor retains highlight after automatic redraw');
+    await hoverTrace('claude-five', .7);
     assert.match(await page.locator('#ua-tooltip').evaluate(n => getComputedStyle(n).backgroundColor), /0\.86/);
     await page.locator('#ua-credit').check(); await page.locator('#ua-credit-mode').selectOption('money'); await page.waitForTimeout(40);
     await hoverTrace('codex-credit', .2);
@@ -114,10 +131,13 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     assert.equal(await page.locator('#ua-tooltip > div').count(),1,'empty chart hover shows only the timestamp even with credits enabled');
     assert.doesNotMatch(await page.locator('#ua-tooltip').textContent(),/Codex|Claude|사용|크레딧|초기화/);
     assert.equal(await page.locator('#ua-tooltip').getAttribute('data-series'),null);
+    assert.equal(await page.locator('.ua-highlight-trace,.ua-muted-trace').count(), 0, 'empty chart space restores every trace');
     await page.screenshot({path:path.join(dir,'screenshots','time-only-tooltip.png')});
     await hoverTrace('claude-five',.7);
     assert.match(await page.locator('#ua-tooltip').textContent(),/Claude Code \/ 5시간 \/ /);
     await page.locator('#ua-credit').uncheck(); await page.mouse.move(0, 0);
+    assert.equal(await page.locator('#ua-chart').getAttribute('data-highlight-series'), null);
+    report.highlight = 'PASS: nearest quota/credit series, same-provider isolation, original opacity scaling, stable SVG/no repeated writes, stationary redraw and blank-space/leave restoration';
     report.tooltip = 'PASS: cursor timestamp once, model/window/usage only per touched quota/credit graph, no duplicate or explanatory rows, translucent background';
     const range = () => page.locator('#ua-chart').evaluate(n => ['domainStart', 'domainEnd', 'extentStart', 'extentEnd'].map(k => Number(n.dataset[k])));
     const week = 7 * 86400000;
@@ -234,6 +254,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     const bridgePoint=await page.locator('[data-interpolated="codex-five"]').evaluate(n=>{const p=n.getPointAtLength(n.getTotalLength()/2),m=n.getScreenCTM();return{x:p.x*m.a+p.y*m.c+m.e,y:p.x*m.b+p.y*m.d+m.f};});
     await page.mouse.move(bridgePoint.x,bridgePoint.y);await page.waitForTimeout(30);
     assert.ok((await compactTooltip()).includes('Codex / 5시간 / ≈35%'));
+    assert.equal(await page.locator('[data-interpolated="codex-five"]').evaluate(node => node.classList.contains('ua-highlight-trace')), true);
     assert.equal(await page.evaluate(()=>JSON.stringify(window.uiModel.data)),originalGaps,'visual interpolation does not write inferred observations');
     await page.screenshot({path:path.join(dir,'screenshots','interpolated-tooltip.png')});
     const gapBounds=await page.locator('[data-chart-hit]').boundingBox(),gapDomain=await page.locator('#ua-chart').evaluate(n=>[Number(n.dataset.domainStart),Number(n.dataset.domainEnd)]);

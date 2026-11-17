@@ -22,6 +22,14 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     const range = () => page.locator('#ua-chart').evaluate(n => [n.dataset.domainStart, n.dataset.domainEnd]);
     await page.setContent(html); await send(model); assert.equal((await selected()).length, 5);
     const geometry = await page.locator('#ua-chart').boundingBox();
+    const agyKey = ids[0] + '-five';
+    const agyPoint = await page.locator('path[data-series="' + agyKey + '"]').first().evaluate(node => {const p = node.getPointAtLength(node.getTotalLength() / 2), m = node.getScreenCTM(); return {x: p.x * m.a + p.y * m.c + m.e, y: p.x * m.b + p.y * m.d + m.f};});
+    await page.mouse.move(agyPoint.x, agyPoint.y);
+    assert.equal(await page.locator('#ua-chart').getAttribute('data-highlight-series'), agyKey);
+    assert.equal(await page.locator('[data-series="' + ids[0] + '-week"]').first().evaluate(node => node.classList.contains('ua-muted-trace')), true);
+    assert.deepEqual(await page.locator('#ua-chart').boundingBox(), geometry);
+    await page.mouse.move(0, 0); assert.equal(await page.locator('.ua-highlight-trace,.ua-muted-trace').count(), 0);
+    report.perSeriesHover = true;
     await page.locator('#ua-nav-pan').focus(); await page.keyboard.press('+'); await paint(); const originalRange = await range();
     for (const id of ['codex', ids[1]]) await page.locator('#ua-' + id).click(); await paint();
     assert.deepEqual(await selected(), ['claude', ids[0], ids[2]]); assert.deepEqual(await range(), originalRange);

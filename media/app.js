@@ -28,13 +28,20 @@
   state.creditBasis = ['subscription', 'billing'].includes(model.creditBasis) ? model.creditBasis : defaults.creditBasis;
   let basisPending = null;
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
-  let hoveredProvider = null;
-  function emphasize(provider) {
+  let hoveredProvider = null, emphasizedTarget = null, hoverPosition = null;
+  function emphasize(provider, series = null) {
     const target = providerVisibility.visible(ids, state.hiddenProviders).includes(provider) ? provider : null;
-    for (const node of el('chart').querySelectorAll('[data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range]')) {
-      const key = node.dataset.series || node.dataset.reset || node.dataset.interpolated || node.dataset.cycleEnd || node.dataset.forecast || node.dataset.forecastTrend || node.dataset.forecastMarker || node.dataset.forecastRange || '';
+    const stamp = series ? 'series:' + series : 'provider:' + (target || '');
+    if (stamp === emphasizedTarget) return;
+    emphasizedTarget = stamp;
+    const chart = el('chart');
+    if (series) chart.dataset.highlightSeries = series; else delete chart.dataset.highlightSeries;
+    for (const node of chart.querySelectorAll('[data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range],[data-forecast-boundary],[data-event],[data-event-line]')) {
+      const key = node.dataset.series || node.dataset.reset || node.dataset.interpolated || node.dataset.cycleEnd || node.dataset.forecast || node.dataset.forecastTrend || node.dataset.forecastMarker || node.dataset.forecastRange || node.dataset.forecastBoundary || node.dataset.event || node.dataset.eventLine || '';
       const owner = providerKeys.find(id => key === id || key.startsWith(id + '-'));
-      node.classList.toggle('ua-muted-trace', Boolean(target && owner && owner !== target));
+      node.style.setProperty('--ua-trace-opacity', node.getAttribute('opacity') || '1');
+      node.classList.toggle('ua-muted-trace', Boolean(series ? owner && key !== series : target && owner && owner !== target));
+      node.classList.toggle('ua-highlight-trace', Boolean(series && key === series && node.matches('[data-series],[data-interpolated],[data-cycle-end],[data-forecast-trend],[data-forecast-marker],[data-forecast-boundary]')));
     }
   }
   const save = () => api.setState(state);
@@ -212,6 +219,7 @@
     document.body.style.backgroundColor = getComputedStyle(root).backgroundColor;
   }
   function draw() {
+    const previousHover = hoverPosition;
     const chartFocused = document.activeElement?.hasAttribute('data-chart-hit');
     const focusedLine = document.activeElement?.dataset?.detailsLine;
     const focusedForecast = document.activeElement?.dataset?.forecastMarker;
@@ -419,7 +427,7 @@
     const selection = g.append('rect').attr('y', top).attr('height', bottom - top).attr('width', 0).attr('fill', 'var(--ua-text)').attr('opacity', .12);
     const hit = svg.append('rect').attr('data-chart-hit', '').attr('tabindex', 0).attr('role', 'application').attr('aria-label', '사용량 그래프. 중간 버튼 드래그 수평 이동, 우클릭 드래그 중앙 기준 핀치 확대 축소, Ctrl 휠 마우스 위치 기준 확대 축소, Shift 휠 수평 이동. 좌우 방향키 탐색, 더하기 빼기 확대 축소, Home 설정한 기본 기간').attr('x', left).attr('y', top).attr('width', right - left).attr('height', bottom - top).attr('fill', 'transparent').style('touch-action', 'pan-y');
     let down = null, press = null, cursor = Math.min(model.now, domain[1]);
-    const clear = () => {el('tooltip').hidden = true; delete el('tooltip').dataset.series; delete el('tooltip').dataset.detail; guide.attr('visibility', 'hidden');};
+    const clear = () => {hoverPosition = null; el('tooltip').hidden = true; delete el('tooltip').dataset.series; delete el('tooltip').dataset.detail; guide.attr('visibility', 'hidden'); emphasize(hoveredProvider);};
     const tipLine = (text, active = false) => {const div = document.createElement('div'); div.textContent = text; if (active) div.className = 'ua-tip-active'; el('tooltip').append(div);};
     const traces = [...data.map(s => ({...s, ys: scale(s), value: p => p.y})), ...nativeData.map(s => ({...s, ys: scale(s), value: p => p.y})), ...interpolated];
     const near = (s, px, py, time) => {
@@ -457,7 +465,7 @@
       d3.select(this).attr('data-details-line', key).attr('tabindex', 0).attr('role', 'button').attr('aria-haspopup', 'dialog').attr('aria-label', `${names[trace.id]} ${trace.w === 'credit' ? trace.billing ? '금액' : labels[trace.creditWindow] + ' 환산 ' + (creditUnit(trace.id) === 'credits' ? '크레딧' : 'USD') : labels[trace.w]} 선 상세 분석. Enter 또는 Space로 열기`).on('keydown.details', function(event) {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault(); event.stopPropagation(); openDetails(trace, time, this);
-      });
+      }).on('focus.highlight', () => emphasize(hoveredProvider, key)).on('blur.highlight', () => emphasize(hoveredProvider));
     });
     const usageText = (s, value, estimated = false) => {
       const credit = s.w === 'credit';
@@ -536,20 +544,25 @@
       const forecastHit = number(py) ? predictions.filter(p => Math.abs(x(p.eta) - px) < 4 && (time >= model.now || Math.hypot(px - x(p.eta), py - predictionY(p)) <= 8)) : [];
       const trendHits = forecastTrends.map(s => nearForecast(s, px, py, time)).filter(p => p && p.distance <= 8).sort((a, b) => a.distance - b.distance);
       const resetHit = number(py) ? resets.filter(r => r.time >= domain[0] && r.time <= domain[1] && Math.abs(x(r.time) - px) < 4) : [];
+      let activeSeries = null;
       if (eventHit.length) {
+        activeSeries = eventHit[0].id + '-' + eventHit[0].w;
         el('tooltip').dataset.series = 'event'; el('tooltip').dataset.detail = 'event';
         detailTips(eventHit.map(e => ({s: {id: e.id, w: e.w}, event: e})));
       } else if (pointHit.length) {
+        activeSeries = seriesKey(pointHit[0].s);
         el('tooltip').dataset.series = seriesKey(pointHit[0].s); el('tooltip').dataset.detail = 'marker';
         const uniquePoints = new Map();
         for (const point of pointHit) if (!uniquePoints.has(seriesKey(point.s))) uniquePoints.set(seriesKey(point.s), point);
         detailTips(uniquePoints.values());
       } else if (forecastHit.length) {
+        activeSeries = forecastHit[0].id + '-' + forecastHit[0].w;
         el('tooltip').dataset.series = 'forecast'; el('tooltip').dataset.detail = 'forecast';
         const groups = new Map();
         for (const p of forecastHit) {const key = p.id + '-' + p.eta; if (!groups.has(key)) groups.set(key, {...p, windows: []}); groups.get(key).windows.push(labels[p.w]);}
         for (const p of groups.values()) tipLine(names[p.id] + ' / ' + p.windows.join('·') + ' / 100% 소진 예상 ≈' + fmt(p.eta), true);
       } else if (trendHits.length && (!selected.length || trendHits[0].distance <= matches[0].distance + .75)) {
+        activeSeries = seriesKey(trendHits[0].s);
         el('tooltip').dataset.series = 'forecast-trend'; el('tooltip').dataset.detail = 'forecast-trend';
         for (const {s, value} of trendHits.filter(p => p.distance <= trendHits[0].distance + .75)) {
           const unit = state.mode === 'total' && !s.known ? 'pp' : '%'; let range = '';
@@ -563,9 +576,11 @@
         for (const r of resetHit) {const key = `${r.id}-${r.time}`; if (!resetGroups.has(key)) resetGroups.set(key, {id: r.id, time: r.time, windows: []}); resetGroups.get(key).windows.push(labels[r.w]);}
         for (const r of resetGroups.values()) tipLine(`${names[r.id]} / ${r.windows.join('·')} / 초기화 ${fmt(r.time)}`, true);
       } else if (selected.length) {
+        activeSeries = seriesKey(selected[0].s);
         el('tooltip').dataset.series = seriesKey(selected[0].s);
         for (const {s, p} of selected) seriesTip(s, s.w === 'credit' ? p.amount : s.interpolated ? p.value : s.value(p), s.interpolated || p.estimated, s.interpolated ? p.value : s.value(p));
       }
+      emphasize(hoveredProvider, activeSeries);
       el('tooltip').hidden = false; const tw = el('tooltip').offsetWidth, th = el('tooltip').offsetHeight;
       el('tooltip').style.left = Math.max(4, Math.min(width - tw - 4, px + tw + 12 > width ? px - tw - 12 : px + 12)) + 'px';
       el('tooltip').style.top = Math.max(top, Math.min(bottom - th, number(py) ? py + 12 : top + 12)) + 'px';
@@ -584,6 +599,7 @@
     });
     hit.on('pointermove', e => {
       if (chartDrag) return;
+      hoverPosition = {x: e.clientX, y: e.clientY};
       const p = px(e); show(p, d3.pointer(e, svg.node())[1]);
       if (press && e.pointerId === press.id) press.movement = Math.max(press.movement, Math.hypot(e.clientX - press.x, e.clientY - press.y));
       if (down !== null) selection.attr('x', Math.min(p, down)).attr('width', Math.abs(p - down));
@@ -619,7 +635,11 @@
     });
     const note = `${fmt(domain[0])} – ${fmt(domain[1])}`;
     el('range').textContent = note; el('range').title = note; el('range').setAttribute('aria-label', note);
-    svg.selectAll('[data-inside-axis]').raise(); emphasize(hoveredProvider);
+    svg.selectAll('[data-inside-axis]').raise(); emphasizedTarget = null; emphasize(hoveredProvider);
+    if (previousHover && !chartDrag && !gesture) {
+      const box = svg.node().getBoundingClientRect(), px = (previousHover.x - box.left) * width / box.width, py = (previousHover.y - box.top) * height / box.height;
+      if (px >= left && px <= right && py >= top && py <= bottom) {hoverPosition = previousHover; show(px, py);} else hoverPosition = null;
+    }
     if (focusedForecastTrend) (svg.node().querySelector('[data-forecast-trend="' + focusedForecastTrend + '"]') || hit.node()).focus({preventScroll: true});
     else if (focusedForecast) svg.node().querySelector('[data-forecast-marker="' + focusedForecast + '"]')?.focus({preventScroll: true});
     else if (chartFocused) hit.node().focus({preventScroll: true});

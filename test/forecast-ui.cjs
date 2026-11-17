@@ -39,6 +39,8 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     const marker = page.locator('[data-forecast-marker="codex-five"]');
     const box = await marker.boundingBox(); await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.waitForSelector('#ua-tooltip[data-detail="forecast"]:not([hidden])');
+    assert.equal(await page.locator('#ua-chart').getAttribute('data-highlight-series'), 'codex-five');
+    assert.equal(await page.locator('[data-forecast-trend="codex-five"]').evaluate(node => getComputedStyle(node).strokeWidth), '1.8px');
     assert.match(await page.locator('#ua-tooltip').textContent(), /Codex.*5시간.*100% 소진 예상/);
     assert.ok(await page.locator('#ua-tooltip div').count() <= 5);
     await page.screenshot({path: path.join(root, 'screenshots/forecast-trend-page.png')});
@@ -48,7 +50,9 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     const middle = await trend.evaluate(n => {const p = n.getPointAtLength(n.getTotalLength() / 2), q = new DOMPoint(p.x, p.y).matrixTransform(n.ownerSVGElement.getScreenCTM()); return {x: q.x, y: q.y};});
     await page.mouse.move(middle.x, middle.y); await page.waitForSelector('#ua-tooltip[data-detail="forecast-trend"]:not([hidden])');
     assert.match(await page.locator('#ua-tooltip').textContent(), /Codex.*5시간 구독 예측.*≈75%/);
+    assert.equal(await page.locator('#ua-chart').getAttribute('data-highlight-series'), 'codex-five');
     await trend.focus(); await page.keyboard.press('Escape'); assert.notEqual(await page.locator('#ua-tooltip').getAttribute('hidden'), null);
+    assert.equal(await page.locator('.ua-highlight-trace').count(), 0);
     report.cases.push('projected line hover reports the estimated value and supports keyboard focus/Escape');
     const adjacent = await trend.evaluate(n => {const p = n.getPointAtLength(n.getTotalLength() * .02), q = new DOMPoint(p.x, p.y).matrixTransform(n.ownerSVGElement.getScreenCTM()); return {x: q.x, y: q.y};});
     await page.mouse.click(adjacent.x, adjacent.y); assert.equal(await page.evaluate(() => window.openedDetails.length), 0, 'future line near the last real point must not open a historical call report');

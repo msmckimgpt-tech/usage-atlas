@@ -44,6 +44,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   const metadataFile = path.join(store.dir, 'metadata.json');
   const output = vscode.window.createOutputChannel('Usage Atlas');
   if (['migrated', 'error'].includes(migration.status)) output.appendLine('이전 확장(local-tools.usage-atlas) 기록 이전: ' + migration.status + (migration.error ? ' (' + migration.error + ')' : '') + (migration.aside ? ', 기존 새 폴더 보존: ' + migration.aside : ''));
+  if (migration.status === 'error') vscode.window.showWarningMessage('Usage Atlas: 이전 확장의 기록을 옮기지 못했습니다(' + migration.error + '). 이전 기록은 삭제되지 않았습니다. 다른 프로필·WSL을 포함해 모든 VS Code 창을 닫았다가 다시 열면 재시도합니다.');
   const controller = new AbortController();
   const diagnostics = new Diagnostics(store.dir, cfg().get('diagnosticsEnabled', true));
   const pending = new ObservationQueue(store.dir);

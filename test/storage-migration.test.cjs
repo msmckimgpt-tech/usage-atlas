@@ -44,3 +44,13 @@ test('이전 폴더가 없거나 같은 폴더면 아무것도 하지 않는다'
   assert.equal(await exists(dir), false);
   await fs.rm(base, {recursive: true, force: true});
 });
+test('동시에 활성화돼도 한 번만 이전하고 모두 같은 결과를 본다', async () => {
+  const base = await root(), legacy = path.join(base, LEGACY_ID), dir = path.join(base, 'publisher.usage-atlas');
+  await fs.mkdir(legacy); await fs.writeFile(path.join(legacy, 'metadata.json'), 'old');
+  const results = await Promise.all([migrateLegacyStorage(dir), migrateLegacyStorage(dir), migrateLegacyStorage(dir)]);
+  assert.deepEqual(results.map(r => r.status).sort(), ['done', 'done', 'migrated']);
+  assert.equal(await fs.readFile(path.join(dir, 'metadata.json'), 'utf8'), 'old');
+  assert.equal(await exists(dir + '.migrate-lock'), false);
+  assert.deepEqual((await fs.readdir(base)).sort(), [LEGACY_ID, 'publisher.usage-atlas']);
+  await fs.rm(base, {recursive: true, force: true});
+});

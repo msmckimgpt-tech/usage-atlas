@@ -220,3 +220,11 @@ test('weekly default uses three observed days while an explicit 24-hour setting 
   assert.equal(explicit.lookbackMs, 24 * hour); assert.ok(Math.abs(explicit.ratePerHour - 1) < 1e-10);
   assert.equal(normal.state, 'reset-first'); assert.equal(explicit.state, 'predicted');
 });
+test('observed zero consumption still draws a flat forecast line to reset matching the preview', () => {
+  const value = predict(rows(Array(61).fill(20))), point = {time: value.observedAt, value: value.used, reset: value.reset};
+  assert.equal(value.state, 'inactive');
+  const trend = forecast.curve(value, point, {}, now);
+  assert.ok(trend); assert.equal(trend.endKind, 'reset');
+  assert.equal(trend.points.at(-1).time, value.reset); assert.equal(trend.points.at(-1).y, forecast.summary(value, now).usedPercent);
+  assert.ok(trend.points.every(p => p.y === 20));
+});

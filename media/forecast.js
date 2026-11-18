@@ -279,7 +279,8 @@
   }
   function curve(value, last, {mode = 'usage', basis = 'current'} = {}, now) {
     const status = present(value, now);
-    if (!['predicted', 'reset-first'].includes(status.state) || mode === 'delta' || !last || last.time !== value.observedAt || last.value !== value.used || last.reset !== value.reset || !value.trajectory && (!finite(value.ratePerHour) || value.ratePerHour <= 0)) return null;
+    // 소비가 없는 inactive도 미리보기가 초기화 시점 사용량을 표시하므로 같은 값을 잇는 수평 예상선을 그린다.
+    if (!['predicted', 'reset-first', 'inactive'].includes(status.state) || mode === 'delta' || !last || last.time !== value.observedAt || last.value !== value.used || last.reset !== value.reset || !value.trajectory && (!finite(value.ratePerHour) || value.ratePerHour < 0 || value.ratePerHour === 0 && status.state !== 'inactive')) return null;
     const end = status.state === 'predicted' ? value.eta : value.reset;
     const rawEnd = status.state === 'predicted' ? 100 : atReset(value);
     const calibrated = finite(last.mult) && last.mult > 0, known = calibrated && (mode !== 'total' || last.cumulativeKnown !== false);

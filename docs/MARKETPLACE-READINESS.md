@@ -17,7 +17,7 @@
 | usage-atlas 0.3.9 | 1순위 | 공개 저장소, MIT+서드파티 고지, PRIVACY/SECURITY/CHANGELOG, 배포 게이트, vsce 4.1.0 고정, OIDC 템플릿(.github/workflows/marketplace.yml). publisher·icon·galleryBanner는 반영됨. |
 | codex-session-tabs 0.16.0 | 보류 | 공식 openai.chatgpt 확장 내부를 패치. 정책 거부·삭제 위험, 상대 업데이트 시 깨짐. |
 | agy-session-tabs 0.2.3 | 보류 | 공식 Antigravity 확장 패치(patch.cjs), 특정 버전 의존. |
-| claude-task-observer 0.1.4 | 정비 후 가능 | 읽기 전용이라 정책상 양호. LICENSE 없음(UNLICENSED), README가 F5 개발용, publisher `local`. |
+| claude-task-observer 0.1.4 | 게시 안 함 | 활성화 시 공식 Claude Code·Codex·AGY 확장 파일에 연결 코드를 자동 패치하고 끄는 설정이 없음. 비공개 GitHub 저장소·Release로만 배포(2026-11-18 결정). |
 | session-browser 0.6.0 | 부적합 | private, 외부 MCP 호스트 exe·Chromium·고정 경로(E:\) 의존, 문서에 Marketplace 미게시 명시. |
 | wsl-load-monitor | 해당 없음 | 확장이 아니라 PowerShell 스크립트. |
 

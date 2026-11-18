@@ -39,10 +39,11 @@ const forecastConfig = (interval = maxIntervalSeconds()) => {
   return {...raw, fiveMinutes: normalized.fiveMinutes, weekHours: normalized.weekHours, patternDays: normalized.patternDays, timeZone: normalized.timeZone};
 };
 const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
-  await migrateLegacyStorage(context.globalStorageUri.fsPath).catch(() => {});
+  const migration = await migrateLegacyStorage(context.globalStorageUri.fsPath).catch(error => ({status: 'error', error: error.code || error.message}));
   const store = new Store(context.globalStorageUri.fsPath,cfg().get('retentionDays'), {archive: true, archiveRetentionDays: cfg().get('archiveRetentionDays', 365)});
   const metadataFile = path.join(store.dir, 'metadata.json');
   const output = vscode.window.createOutputChannel('Usage Atlas');
+  if (['migrated', 'error'].includes(migration.status)) output.appendLine('이전 확장(local-tools.usage-atlas) 기록 이전: ' + migration.status + (migration.error ? ' (' + migration.error + ')' : '') + (migration.aside ? ', 기존 새 폴더 보존: ' + migration.aside : ''));
   const controller = new AbortController();
   const diagnostics = new Diagnostics(store.dir, cfg().get('diagnosticsEnabled', true));
   const pending = new ObservationQueue(store.dir);

@@ -103,7 +103,7 @@ test('a symlink cannot expose a file outside the approved log root', async t => 
   const outside = path.join(dir, 'outside.jsonl'), link = file + '-link.jsonl'; await fs.writeFile(outside, JSON.stringify(event('claude', 1, 'OUTSIDE')) + '\n');
   try {await fs.symlink(outside, link, 'file');} catch (error) {if (['EPERM', 'EACCES'].includes(error.code)) {t.skip('symlink privilege unavailable'); return;} throw error;}
   options.hints[0] = {...options.hints[0], key: hash('claude:' + link), path: link};
-  // 러너의 짧은 임시 경로(8.3)에서는 힌트 키가 달라 '찾을 수 없음'으로 거부되므로 두 거부 사유를 모두 허용하되 외부 파일 내용은 노출되지 않아야 한다.
+  // GitHub Windows 러너에서는 심볼릭 링크가 '경로' 오류 대신 '찾을 수 없음'으로 거부된다(원인 미확인). 두 거부 사유를 허용하되 외부 파일 내용은 노출되지 않아야 한다.
   await assert.rejects(reader.open(options), error => /경로|찾을 수 없/.test(error.message) && !String(error.message).includes('OUTSIDE'));
 }));
 test('session source lookup respects provider/account/home and never persists transcript text', () => fixture('codex', [

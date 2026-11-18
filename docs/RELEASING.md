@@ -1,6 +1,6 @@
 # 배포 절차
 
-현재는 사용자의 선택에 따라 소스와 VSIX를 GitHub Releases에 수동 공개합니다. 자동화 워크플로는 docs/workflows의 템플릿으로만 보관하며 활성화하지 않습니다. 현재 공개 상태는 [SETUP-STATUS.md](SETUP-STATUS.md)를 참조하세요. 아래 자동 배포 절차는 이후 별도 활성화할 때 사용합니다.
+자동 배포 워크플로는 .github/workflows에 있습니다. CI는 push와 PR에서, Release VSIX는 v*.*.* 태그 push에서 실행되며 Marketplace 게시는 수동 실행(workflow_dispatch)입니다. 현재 공개 상태는 [SETUP-STATUS.md](SETUP-STATUS.md)를 참조하세요.
 
 ## GitHub Releases
 
@@ -20,12 +20,12 @@ git push origin v0.2.22
 
 ## Marketplace 준비
 
-현재 package.json의 publisher는 기존 로컬 설치 ID를 유지하기 위한 local-tools입니다. 이 이름에 대한 Marketplace 소유권을 확인한 상태는 아닙니다. GitHub 계정과 Marketplace 게시자 등록은 별개입니다. 소유하지 않은 게시자로 게시하지 않습니다.
+package.json의 publisher는 Marketplace 게시자 msmckimgpt-tech입니다. 기존 GitHub 배포판의 local-tools.usage-atlas와는 다른 확장 ID이므로, 새 확장은 첫 실행 때 이전 저장 폴더(globalStorage)를 한 번 복사합니다(src/storage-migration.cjs). 이전 폴더는 지우지 않으며, 새 폴더에 데이터가 있으면 합치지 않습니다.
 
 게시할 때 다음을 한 번 설정해야 합니다.
 
 1. [Marketplace 게시자 관리](https://marketplace.visualstudio.com/manage/publishers/)에서 사용할 게시자를 등록하거나 소유권을 확인합니다.
-2. 다른 publisher를 사용한다면 package.json의 publisher를 바꾸고 새 버전으로 GitHub Release를 만듭니다. 기존 local-tools.usage-atlas와 확장 ID·저장 공간이 달라지므로 기존 사용자의 기록 이전 안내를 먼저 준비합니다.
+2. publisher를 바꾸면 확장 ID와 저장 공간이 달라집니다. 이미 msmckimgpt-tech로 전환했으므로 이 항목은 완료된 상태입니다.
 3. Marketplace 게시자의 Trusted Publishing 정책을 다음과 같이 구성합니다: owner=msmckimgpt-tech, repository=usage-atlas, workflow=marketplace.yml, environment=marketplace.
 4. GitHub 저장소의 marketplace Environment를 생성하고 필요하면 승인 담당자를 지정합니다.
 5. 저장소 Actions 변수 MARKETPLACE_PUBLISHER를 소유한 게시자 ID, MARKETPLACE_ENABLED를 true로 설정합니다.

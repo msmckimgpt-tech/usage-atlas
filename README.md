@@ -27,10 +27,10 @@ Codex·Claude Code·Antigravity의 구독 사용량·소진 예측과 확인 가
 CLI로 설치할 수도 있습니다. 파일명은 내려받은 버전에 맞춥니다.
 
 ~~~sh
-code --install-extension ./usage-atlas-0.3.8.vsix
+code --install-extension ./usage-atlas-0.3.9.vsix
 ~~~
 
-기존 로컬 설치와 같은 확장 ID인 local-tools.usage-atlas를 유지합니다. Marketplace 등록은 아직 완료되지 않았으며, 현재 배포 채널은 GitHub Releases입니다.
+확장 ID는 msmckimgpt-tech.usage-atlas입니다. 이전 GitHub 배포판(local-tools.usage-atlas)에서 업데이트하면 첫 실행 때 이전 기록 폴더를 새 폴더로 한 번 복사하며, 이전 폴더는 지우지 않습니다. 이전 확장은 직접 제거하세요. 두 확장을 동시에 켜면 수집이 중복됩니다.
 
 WSL을 사용한다면 **Remote - WSL 창에 연결한 상태**에서 같은 VSIX를 설치하고 해당 원격 창의 확장 화면에 설치됐는지 확인하세요. Windows와 WSL은 각각 실행되는 사용자 계정의 공식 로그인과 로컬 기록을 참조하며 기록을 자동 병합하지 않습니다.
 

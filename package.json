@@ -2,8 +2,13 @@
   "name": "usage-atlas"
 , "displayName": "Usage Atlas"
 , "description": "Codex, Claude Code, Antigravity 사용량 기록과 계획"
-, "version": "0.3.8"
-, "publisher": "local-tools"
+, "version": "0.3.9"
+, "publisher": "msmckimgpt-tech"
+, "icon": "media/icon.png"
+, "galleryBanner": {
+    "color": "#176f69"
+  , "theme": "dark"
+  }
 , "license": "SEE LICENSE IN LICENSE"
 , "engines": {
     "vscode": "^1.100.0"

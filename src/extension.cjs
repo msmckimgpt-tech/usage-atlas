@@ -11,6 +11,7 @@ const forecasts = require('../media/forecast.js');
 const chartGraphs = require('../media/chart-series.js');
 const billing = require('./billing.cjs');
 const {PatternBook} = require('./pattern-book.cjs');
+const {migrateLegacyStorage} = require('./storage-migration.cjs');
 const forecastLearning = require('./forecast-learning.cjs');
 const adapters = require('./adapters.cjs');
 const antigravity = require('./antigravity.cjs');
@@ -38,7 +39,8 @@ const forecastConfig = (interval = maxIntervalSeconds()) => {
   return {...raw, fiveMinutes: normalized.fiveMinutes, weekHours: normalized.weekHours, patternDays: normalized.patternDays, timeZone: normalized.timeZone};
 };
 const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
-  const store = new Store(context.globalStorageUri.fsPath, cfg().get('retentionDays'), {archive: true, archiveRetentionDays: cfg().get('archiveRetentionDays', 365)});
+  await migrateLegacyStorage(context.globalStorageUri.fsPath).catch(() => {});
+  const store = new Store(context.globalStorageUri.fsPath,cfg().get('retentionDays'), {archive: true, archiveRetentionDays: cfg().get('archiveRetentionDays', 365)});
   const metadataFile = path.join(store.dir, 'metadata.json');
   const output = vscode.window.createOutputChannel('Usage Atlas');
   const controller = new AbortController();

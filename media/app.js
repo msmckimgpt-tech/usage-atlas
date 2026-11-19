@@ -29,6 +29,22 @@
   let basisPending = null;
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
   let hoveredProvider = null, emphasizedTarget = null, hoverPosition = null;
+  // 강조 대상은 그릴 때 한 번만 색인한다. 호버마다 DOM을 다시 훑거나 모든 노드에 쓰지 않고, 상태가 바뀐 노드만 갱신한다.
+  const traceSelector = '[data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range],[data-forecast-boundary],[data-event],[data-event-line]';
+  const highlightSelector = '[data-series],[data-interpolated],[data-cycle-end],[data-forecast-trend],[data-forecast-marker],[data-forecast-boundary]';
+  // 기호 경로 문자열은 모양·크기마다 한 번만 만든다. 위치는 transform으로 옮긴다.
+  const symbolTypes = {circle: d3.symbolCircle, diamond: d3.symbolDiamond, triangle: d3.symbolTriangle}, symbolCache = new Map();
+  const symbolPath = (type, size) => {const key = type + size; let d = symbolCache.get(key); if (d === undefined) symbolCache.set(key, d = d3.symbol().type(symbolTypes[type]).size(size)()); return d;};
+  // 강조 색인은 실제로 강조가 필요할 때만 만든다. 새로 그린 DOM에는 아직 어떤 클래스도 없다.
+  let traceIndex = null;
+  function indexTraces() {
+    traceIndex = [];
+    for (const node of el('chart').querySelectorAll(traceSelector)) {
+      const key = node.dataset.series || node.dataset.reset || node.dataset.interpolated || node.dataset.cycleEnd || node.dataset.forecast || node.dataset.forecastTrend || node.dataset.forecastMarker || node.dataset.forecastRange || node.dataset.forecastBoundary || node.dataset.event || node.dataset.eventLine || '';
+      node.style.setProperty('--ua-trace-opacity', node.getAttribute('opacity') || '1');
+      traceIndex.push({node, key, owner: providerKeys.find(id => key === id || key.startsWith(id + '-')), highlightable: node.matches(highlightSelector), muted: false, highlighted: false});
+    }
+  }
   function emphasize(provider, series = null) {
     const target = providerVisibility.visible(ids, state.hiddenProviders).includes(provider) ? provider : null;
     const stamp = series ? 'series:' + series : 'provider:' + (target || '');
@@ -36,16 +52,17 @@
     emphasizedTarget = stamp;
     const chart = el('chart');
     if (series) chart.dataset.highlightSeries = series; else delete chart.dataset.highlightSeries;
-    for (const node of chart.querySelectorAll('[data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range],[data-forecast-boundary],[data-event],[data-event-line]')) {
-      const key = node.dataset.series || node.dataset.reset || node.dataset.interpolated || node.dataset.cycleEnd || node.dataset.forecast || node.dataset.forecastTrend || node.dataset.forecastMarker || node.dataset.forecastRange || node.dataset.forecastBoundary || node.dataset.event || node.dataset.eventLine || '';
-      const owner = providerKeys.find(id => key === id || key.startsWith(id + '-'));
-      node.style.setProperty('--ua-trace-opacity', node.getAttribute('opacity') || '1');
-      node.classList.toggle('ua-muted-trace', Boolean(series ? owner && key !== series : target && owner && owner !== target));
-      node.classList.toggle('ua-highlight-trace', Boolean(series && key === series && node.matches('[data-series],[data-interpolated],[data-cycle-end],[data-forecast-trend],[data-forecast-marker],[data-forecast-boundary]')));
+    if (!traceIndex) {if (!series && !target) return; indexTraces();}
+    for (const item of traceIndex) {
+      const muted = Boolean(series ? item.owner && item.key !== series : target && item.owner && item.owner !== target);
+      const highlighted = Boolean(series && item.key === series && item.highlightable);
+      if (muted !== item.muted) {item.muted = muted; item.node.classList.toggle('ua-muted-trace', muted);}
+      if (highlighted !== item.highlighted) {item.highlighted = highlighted; item.node.classList.toggle('ua-highlight-trace', highlighted);}
     }
   }
   const save = () => api.setState(state);
-  const fmt = time => new Date(time).toLocaleString('ko-KR', {month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false});
+  const fmtFormat = new Intl.DateTimeFormat('ko-KR', {month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false});
+  const fmt = time => fmtFormat.format(new Date(time));
   const round = n => Math.round(n * 10) / 10;
   const dash = w => w === 'week' ? '7 4' : w === 'money' ? '1 5' : null;
   const command = name => api.postMessage({type: 'command', command: name});
@@ -69,10 +86,13 @@
   };
   const feeNumber = n => globalThis.usageAtlasAmountFormat.format(n, state.mode === 'delta' ? 8 : 4);
   const creditNumber = (n, providerOrUnit) => globalThis.usageAtlasAmountFormat.format(n, providerOrUnit === 'codex' || providerOrUnit === 'credits' ? model.codexCreditDecimals : model.claudeUsdDecimals);
-  const requestDraw = () => {cancelAnimationFrame(raf); raf = requestAnimationFrame(draw);};
+  // 범위만 바뀐 프레임은 공급자 표시줄·컨트롤 동기화를 건너뛴다. 전체 갱신이 같은 프레임에 요청되면 그쪽이 우선한다.
+  let fullPending = false, rangeOnly = false, navWidth = 0, axisFont = '';
+  const requestDraw = () => {fullPending = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(draw);};
+  const requestRangeDraw = () => {rangeOnly = !fullPending; cancelAnimationFrame(raf); raf = requestAnimationFrame(draw);};
   const historyDays = value => Number.isInteger(value) && value >= 1 && value <= 365 ? value : 7;
   const defaultRange = extent => bounded([model.now - historyDays(model.chartHistoryDays) * 86400000, model.now + week], extent);
-  const resetRange = () => {state.range = null; if (view) view.domain = defaultRange(view.extent); save(); requestDraw();};
+  const resetRange = () => {state.range = null; if (view) view.domain = defaultRange(view.extent); save(); requestRangeDraw();};
   function bounded(range, extent) {
     const span = Math.min(extent[1] - extent[0], Math.max(minSpan, range[1] - range[0]));
     const start = Math.max(extent[0], Math.min(extent[1] - span, range[0]));
@@ -82,14 +102,14 @@
     state.range = bounded(range, view.extent);
     view.domain = state.range;
     if (persist) save();
-    requestDraw();
+    requestRangeDraw();
   }
   function navigator() {
     const {extent, domain} = view, duration = extent[1] - extent[0];
     const position = time => (time - extent[0]) / duration * 100;
     el('nav-thumb').style.left = position(domain[0]) + '%';
     el('nav-thumb').style.width = (domain[1] - domain[0]) / duration * 100 + '%';
-    el('nav-thumb').dataset.compact = String((domain[1] - domain[0]) / duration * el('navigator').clientWidth < 36);
+    el('nav-thumb').dataset.compact = String((domain[1] - domain[0]) / duration * (navWidth || el('navigator').clientWidth) < 36);
     el('nav-now').style.left = position(model.now) + '%';
     el('history-controls').setAttribute('aria-busy', String(historyBusy));
     for (const button of el('history-controls').querySelectorAll('button')) {
@@ -161,7 +181,7 @@
       el(id + '-credit').title = conversion + ' · ' + summary + (state.creditBasis === 'billing' ? ' · 기본 월 요금 ' + (number(p?.ledger?.at(-1)?.billing?.monthlyUsd) ? '$' + p.ledger.at(-1).billing.monthlyUsd : '-') + ' · 공식 가격 확인 ' + (p?.ledger?.at(-1)?.billing?.priceVerifiedAt || '-') + ' · 실제 청구액 아님' : '') + (unit === 'credits' ? ' · 잔액 감소 관측값이며 충전·만료·조정을 구분하는 결제 내역은 아닙니다.' : '');
       if (state.credit) el(id).setAttribute('aria-label', el(id).getAttribute('aria-label') + '. ' + summary + conversion);
     }
-    const environment = `${model.host || '로컬'} · 기록 ${model.count ?? 0}건${model.storagePath ? ' · ' + model.storagePath : ''}`;
+    const environment = `${model.host || '로컬'} · 기록 ${model.count ?? 0}건`;
     el('environment').textContent = environment; el('environment').title = environment;
   }
   const quota = (id, w) => chartGraphs.quota(model.data[id], id, w, {...state, antigravitySmoothingMinutes: model.antigravitySmoothingMinutes, credit: state.credit && state.creditBasis !== 'billing'});
@@ -218,41 +238,76 @@
     document.documentElement.style.colorScheme = root.style.colorScheme;
     document.body.style.backgroundColor = getComputedStyle(root).backgroundColor;
   }
+  // 점 전체에 대한 O(N) 계산은 데이터·보기 모드가 바뀔 때만 한다. 확대·이동 프레임은 이 결과를 재사용한다.
+  const chunkify = (points, broken) => {
+    const chunks = []; let chunk = [];
+    for (const p of points) {if (broken(p) && chunk.length) {chunks.push(chunk); chunk = [];} if (number(p.y)) chunk.push(p); else if (chunk.length) {chunks.push(chunk); chunk = [];}}
+    if (chunk.length) chunks.push(chunk);
+    return chunks;
+  };
+  let derived = null, drawSeq = 0;
+  function derive() {
+    const visible = providerVisibility.visible(ids, state.hiddenProviders);
+    const key = [state.mode, state.basis, state.credit, state.creditMode, state.creditBasis, displayCreditMode(), model.antigravitySmoothingMinutes, visible.join()].join('|');
+    if (derived && derived.model === model && derived.key === key) return derived;
+    const quotas = new Map(visible.flatMap(id => ['five', 'week'].map(w => [id + '-' + w, quota(id, w)])));
+    const data = [...quotas.values()].flat().map(s => ({...s, bridges: gaps.bridges(s.points, 'y'), chunks: chunkify(s.points, p => !p.continuous)}));
+    const all = ids.flatMap(id => Object.values(model.data[id]?.windows || {}).flat());
+    const events = visible.flatMap(id => chartGraphs.events(model.data[id], id, {...state, antigravitySmoothingMinutes: model.antigravitySmoothingMinutes}).map(e => ({...e, id, w: e.window}))).filter(e => e.kind !== 'scheduled-reset');
+    const nativeCredits = visible.filter(id => state.credit && creditAvailable(id) && displayCreditMode() === 'money' && model.data[id]?.ledger.some(p => number(p.credit?.[state.mode])));
+    const nativeData = nativeCredits.flatMap(id => creditGraphs.series(model.data[id], id, state)).map(s => ({...s, bridges: gaps.bridges(s.points, 'y'), chunks: chunkify(s.points, p => p.continuous === false)}));
+    const nativePoints = Object.fromEntries(nativeCredits.map(id => [id, creditPoints(id)]));
+    const nativeBridges = Object.fromEntries(nativeCredits.map(id => [id, gaps.bridges(nativePoints[id], 'amount')]));
+    const cycleEnds = [];
+    for (const s of data) {
+      const byTime = new Map(s.points.map(p => [p.time, p]));
+      for (const next of s.points) if (['scheduled-reset', 'early-reset'].includes(next.event?.kind)) {
+        const p = byTime.get(next.event.fromTime);
+        if (next.time > model.now || !p || !number(p.y)) continue;
+        cycleEnds.push({s, p, event: next.event});
+      }
+    }
+    const firstTime = model.firstObserved ?? all.reduce((min, p) => p.time < min ? p.time : min, Infinity);
+    derived = {model, key, visible, quotas, data, all, events, nativeCredits, nativeData, nativePoints, nativeBridges, cycleEnds, firstTime: Number.isFinite(firstTime) ? firstTime : undefined};
+    return derived;
+  }
   function draw() {
     const previousHover = hoverPosition;
     const chartFocused = document.activeElement?.hasAttribute('data-chart-hit');
     const focusedLine = document.activeElement?.dataset?.detailsLine;
     const focusedForecast = document.activeElement?.dataset?.forecastMarker;
     const focusedForecastTrend = document.activeElement?.dataset?.forecastTrend;
-    sync(); providerInfo(); el('tooltip').hidden = true;
+    // 레이아웃 읽기는 DOM을 바꾸기 전에 한 번에 모아 강제 레이아웃을 피한다.
+    drawSeq++;
+    const skipChrome = rangeOnly && !fullPending; rangeOnly = fullPending = false;
+    const chartBox = el('chart').getBoundingClientRect();
+    navWidth = el('navigator').clientWidth;
+    if (!skipChrome || !axisFont) axisFont = `12px ${getComputedStyle(root).fontFamily}`;
+    if (!skipChrome) {sync(); providerInfo();}
+    el('tooltip').hidden = true;
     const svg = d3.select(el('chart')); svg.selectAll('*').remove();
-    const chartBox = el('chart').getBoundingClientRect(), width = Math.max(240, chartBox.width), narrow = width < 700;
+    const width = Math.max(240, chartBox.width), narrow = width < 700;
     const height = Math.max(200, chartBox.height), left = narrow ? 42 : 58, right = Math.max(left + 60, width - 12), top = 32;
     svg.attr('viewBox', `0 0 ${width} ${height}`).attr('height', height);
-    const visible = providerVisibility.visible(ids, state.hiddenProviders);
-    const data = visible.flatMap(id => ['five', 'week'].flatMap(w => quota(id, w))).map(s => ({...s, bridges:gaps.bridges(s.points, 'y')}));
-    const all = ids.flatMap(id => Object.values(model.data[id]?.windows || {}).flat());
+    const {visible, quotas, data, all, events, nativeCredits, nativeData, nativePoints, nativeBridges, cycleEnds: cycleEndList, firstTime} = derive();
     const resets = visible.flatMap(id => ['five', 'week'].map(w => ({id, w, time: model.data[id]?.last?.windows[w]?.reset}))).filter(r => number(r.time) && r.time > model.now);
-    const events = visible.flatMap(id => chartGraphs.events(model.data[id], id, {...state, antigravitySmoothingMinutes: model.antigravitySmoothingMinutes}).map(e => ({...e, id, w: e.window}))).filter(e => e.kind !== 'scheduled-reset');
-    const start = model.firstObserved ?? d3.min(all, p => p.time) ?? model.now;
+    const start = firstTime ?? model.now;
     // 첫 기록이 최근이어도 현재를 중앙에 놓도록 과거 빈 구간을 확보한다.
     const full = [Math.min(start, model.now - week), model.now + week];
     const domain = state.range ? bounded(state.range, full) : defaultRange(full);
-    axisContext.font = `12px ${getComputedStyle(root).fontFamily}`;
+    axisContext.font = axisFont;
     const axis = globalThis.usageAtlasTimeAxis.layout(domain, right - left, measureAxis);
     const dateRows = Math.max(1, ...axis.dates.map(tick => tick.row + 1)), axisRows = dateRows + (axis.hours.length ? 1 : 0);
     const bottom = height - 112 - Math.max(0, axisRows - 2) * 16;
     view = {extent: full, domain, left, right, width, top, bottom, height}; navigator();
     svg.attr('data-domain-start', domain[0]).attr('data-domain-end', domain[1]).attr('data-extent-start', full[0]).attr('data-extent-end', full[1]);
     const x = d3.scaleLinear().domain(domain).range([left, right]);
-    const nativeCredits = visible.filter(id => state.credit && creditAvailable(id) && displayCreditMode() === 'money' && model.data[id]?.ledger.some(p => number(p.credit?.[state.mode])));
-    const nativeData = nativeCredits.flatMap(id => creditGraphs.series(model.data[id], id, state)).map(s => ({...s, bridges: gaps.bridges(s.points, 'y')}));
     const forecastTrends = model.forecastEnabled === false ? [] : visible.flatMap(id => ['five', 'week'].map(w => {
       const provider = model.data[id], last = provider?.windows?.[w]?.at(-1), curve = forecasts.curve(provider?.forecast?.[w], last, state, model.now);
       if (!curve) return null;
       // 추정 합산 보기에서는 관측선과 같은 기준(구독 + 추가 크레딧 환산)에서 예상선을 잇는다.
       if (state.credit && displayCreditMode() === 'estimate') {
-        const observed = quota(id, w).flatMap(s => s.points).find(p => p.time === last.time && number(p.y));
+        const observed = quotas.get(id + '-' + w).flatMap(s => s.points).find(p => p.time === last.time && number(p.y));
         if (!observed) return null;
         const offset = observed.y - curve.points[0].y;
         if (offset) {curve.points = curve.points.map(p => ({...p, y: p.y + offset})); curve.range = curve.range.map(p => ({...p, low: p.low + offset, high: p.high + offset}));}
@@ -270,12 +325,11 @@
     const scale = s => s.billing ? by : split && !s.known ? uy : y;
     svg.attr('data-y-billing-max', state.creditBasis === 'billing' && state.credit ? feeMaximum : null);
     svg.attr('data-y-max', y.domain()[1]).attr('data-y-unscaled-max', uy.domain()[1]);
-    const nativePoints = Object.fromEntries(nativeCredits.map(id => [id, creditPoints(id)]));
-    const nativeBridges = Object.fromEntries(nativeCredits.map(id => [id, gaps.bridges(nativePoints[id], 'amount')]));
     const inView = (points, bridges) => {
-      const values = points.filter(p => p.time >= domain[0] && p.time <= domain[1] && number(p.amount)).map(p => p.amount);
+      const values = [], lo = chartGraphs.lowerBound(points, domain[0]), hi = chartGraphs.upperBound(points, domain[1], lo);
+      for (let i = lo; i < hi; i++) if (number(points[i].amount)) values.push(points[i].amount);
       for (const edge of domain) {
-        const i = d3.bisector(p => p.time).left(points, edge), a = points[i - 1], b = points[i];
+        const i = chartGraphs.lowerBound(points, edge), a = points[i - 1], b = points[i];
         if (a && b && b.continuous && number(a.amount) && number(b.amount)) values.push(a.amount + (b.amount - a.amount) * (edge - a.time) / (b.time - a.time));
       }
       return values.concat(gaps.visible(bridges, 'amount', domain));
@@ -286,7 +340,7 @@
       return [unit, [lo, hi]];
     }));
     const text = (s, px, py, cls = '') => svg.append('text').attr('x', px).attr('y', py).attr('class', cls).text(s);
-    const marker = (g, id, px, py, size = 40) => g.append('path').attr('d', d3.symbol().type(id === 'codex' ? d3.symbolCircle : d3.symbolDiamond).size(size)()).attr('transform', `translate(${px},${py})`).attr('fill', colors[id]).attr('stroke', 'var(--ua-bg)').attr('vector-effect', 'non-scaling-stroke');
+    const marker = (g, id, px, py, size = 40) => g.append('path').attr('d', symbolPath(id === 'codex' ? 'circle' : 'diamond', size)).attr('transform', `translate(${px},${py})`).attr('fill', colors[id]).attr('stroke', 'var(--ua-bg)').attr('vector-effect', 'non-scaling-stroke');
     const estimated = [...data, ...nativeData].some(s => s.points.some(p => p.estimated)) || forecastTrends.length > 0;
     const pendingEstimate = state.credit && state.creditBasis !== 'billing' && visible.some(id => !canEstimate(id));
     const rawAxis = state.mode === 'total' ? '미환산 pp' : state.mode === 'delta' ? '원본 pp' : '원본 %';
@@ -335,27 +389,21 @@
     for (const e of eventMarks) {
       const px = x(e.time), py = top + 12 + (e.w === 'week' ? 12 : 0);
       if (e.kind === 'early-reset') g.append('line').attr('data-event-line', `${e.id}-${e.w}`).attr('x1', px).attr('x2', px).attr('y1', top).attr('y2', bottom).attr('stroke', colors[e.id]).attr('stroke-dasharray', '2 5').attr('opacity', .38);
-      g.append('path').attr('data-event', `${e.id}-${e.w}`).attr('data-event-kind', e.kind).attr('data-event-count', e.count).attr('data-time', e.time).attr('d', d3.symbol().type(e.kind === 'early-reset' ? d3.symbolTriangle : d3.symbolDiamond).size(50)()).attr('transform', `translate(${px},${py})`).attr('fill', colors[e.id]).attr('stroke', 'var(--ua-bg)');
+      g.append('path').attr('data-event', `${e.id}-${e.w}`).attr('data-event-kind', e.kind).attr('data-event-count', e.count).attr('data-time', e.time).attr('d', symbolPath(e.kind === 'early-reset' ? 'triangle' : 'diamond', 50)).attr('transform', `translate(${px},${py})`).attr('fill', colors[e.id]).attr('stroke', 'var(--ua-bg)');
     }
-    const pointMarks = [];
+    const pointMarks = [], inDomain = points => points[0].time <= domain[1] && points.at(-1).time >= domain[0];
     for (const s of data) {
-      const chunks = []; let chunk = [];
-      for (const p of s.points) {if (!p.continuous && chunk.length) {chunks.push(chunk); chunk = [];} if (number(p.y)) chunk.push(p); else if (chunk.length) {chunks.push(chunk); chunk = [];}}
-      if (chunk.length) chunks.push(chunk);
-      for (const points of chunks) {
+      for (const points of s.chunks) {
+        if (!inDomain(points)) continue;
         if (points.length === 1) {marker(g, s.id, x(points[0].time), scale(s)(points[0].y), 25).datum(points).attr('data-series', `${s.id}-${s.w}`).attr('data-series-known', s.known); pointMarks.push({s, p: points[0], ys: scale(s)});}
-        else g.append('path').datum(points).attr('data-series', `${s.id}-${s.w}`).attr('d', d3.line().x(p => x(p.time)).y(p => scale(s)(p.y))).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', s.w === 'week' ? 1.1 : .9).attr('opacity', s.w === 'week' ? .95 : .82).attr('stroke-dasharray', dash(s.w)).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+        else if (inDomain(points)) g.append('path').datum(points).attr('data-series', `${s.id}-${s.w}`).attr('d', d3.line().x(p => x(p.time)).y(p => scale(s)(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => scale(s)(p.y)))).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', s.w === 'week' ? 1.1 : .9).attr('opacity', s.w === 'week' ? .95 : .82).attr('stroke-dasharray', dash(s.w)).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
       }
     }
     for (const s of nativeData) {
-      const cy = scale(s), chunks = []; let chunk = [];
-      for (const p of s.points) {
-        if (p.continuous === false && chunk.length) {chunks.push(chunk); chunk = [];}
-        if (number(p.y)) chunk.push(p); else if (chunk.length) {chunks.push(chunk); chunk = [];}
-      }
-      if (chunk.length) chunks.push(chunk);
-      for (const points of chunks) {
-        const node = points.length === 1 ? marker(g, s.id, x(points[0].time), cy(points[0].y), 25) : g.append('path').datum(points).attr('d', d3.line().x(p => x(p.time)).y(p => cy(p.y))).attr('stroke', colors[s.id]).attr('stroke-width', .8).attr('stroke-dasharray', s.creditWindow === 'week' ? '5 3 1 3' : dash('money')).attr('fill', 'none').attr('opacity', .68).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      const cy = scale(s);
+      for (const points of s.chunks) {
+        if (!inDomain(points)) continue;
+        const node = points.length === 1 ? marker(g, s.id, x(points[0].time), cy(points[0].y), 25) : g.append('path').datum(points).attr('d', d3.line().x(p => x(p.time)).y(p => cy(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => cy(p.y)))).attr('stroke', colors[s.id]).attr('stroke-width', .8).attr('stroke-dasharray', s.creditWindow === 'week' ? '5 3 1 3' : dash('money')).attr('fill', 'none').attr('opacity', .68).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
         node.datum(points).attr('data-series', seriesKey(s)).attr('data-series-known', s.known).attr('data-credit-unit', creditUnit(s.id)).attr('data-credit-window', s.creditWindow);
         if (points.length === 1) pointMarks.push({s, p: points[0], ys: cy});
       }
@@ -369,13 +417,9 @@
     for (const s of data) bridgeLine(s, s.bridges, 'y', scale(s));
     for (const s of nativeData) bridgeLine(s, s.bridges, 'y', scale(s));
     const cycleEnds = new Map();
-    for (const s of data) {
-      const byTime = new Map(s.points.map(p => [p.time, p]));
-      for (const next of s.points) if (['scheduled-reset', 'early-reset'].includes(next.event?.kind)) {
-        const p = byTime.get(next.event.fromTime);
-        if (next.time > model.now || !p || !number(p.y) || p.time < domain[0] || p.time > domain[1]) continue;
-        cycleEnds.set(`${s.id}-${s.w}-${Math.round(x(p.time) / 8)}`, {s, p, event:next.event});
-      }
+    for (const {s, p, event} of cycleEndList) {
+      if (p.time < domain[0] || p.time > domain[1]) continue;
+      cycleEnds.set(`${s.id}-${s.w}-${Math.round(x(p.time) / 8)}`, {s, p, event});
     }
     // 완료 주기의 실제 마지막 관측점만 표시하며 경계의 마커도 잘리지 않게 한다.
     svg.select('defs').append('clipPath').attr('id', 'ua-marker-clip').append('rect').attr('x', left - 5).attr('y', top - 5).attr('width', right - left + 10).attr('height', bottom - top + 10);
@@ -416,7 +460,7 @@
     // 초기화 표시는 그래프의 선에 직접 연결한다. 별도 목록은 만들지 않는다.
     const placed = [];
     for (const r of resets.filter(r => r.time >= domain[0] && r.time <= domain[1]).sort((a, b) => a.time - b.time)) {
-      const label = text(`${names[r.id]} ${labels[r.w]}`, 0, 0); const w = label.node().getComputedTextLength(); const px = Math.max(4, Math.min(width - w - 4, x(r.time) - w));
+      const label = text(`${names[r.id]} ${labels[r.w]}`, 0, 0); const w = measureAxis(label.text()); const px = Math.max(4, Math.min(width - w - 4, x(r.time) - w));
       let row = 0; while (placed.some(p => p.row === row && px < p.end + 8 && px + w > p.start - 8)) row++;
       placed.push({row, start: px, end: px + w}); const py = bottom + 23 + axisRows * 16 + row * 16;
       label.attr('x', px).attr('y', py).attr('fill', colors[r.id]).attr('data-reset-label', `${r.id}-${r.w}`).append('title').text(fmt(r.time));
@@ -635,10 +679,14 @@
     });
     const note = `${fmt(domain[0])} – ${fmt(domain[1])}`;
     el('range').textContent = note; el('range').title = note; el('range').setAttribute('aria-label', note);
-    svg.selectAll('[data-inside-axis]').raise(); emphasizedTarget = null; emphasize(hoveredProvider);
+    svg.selectAll('[data-inside-axis]').raise(); traceIndex = null; emphasizedTarget = null; emphasize(hoveredProvider);
     if (previousHover && !chartDrag && !gesture) {
-      const box = svg.node().getBoundingClientRect(), px = (previousHover.x - box.left) * width / box.width, py = (previousHover.y - box.top) * height / box.height;
-      if (px >= left && px <= right && py >= top && py <= bottom) {hoverPosition = previousHover; show(px, py);} else hoverPosition = null;
+      // 방금 만든 SVG의 레이아웃을 강제하지 않도록 그리기 시작 때 읽어 둔 상자로 계산하고, 툴팁 복원은 다음 프레임에 한다.
+      const px = (previousHover.x - chartBox.left) * width / chartBox.width, py = (previousHover.y - chartBox.top) * height / Math.max(chartBox.height, 1);
+      if (px >= left && px <= right && py >= top && py <= bottom) {
+        hoverPosition = previousHover; const seq = ++drawSeq;
+        requestAnimationFrame(() => {if (seq === drawSeq && hoverPosition === previousHover) show(px, py);});
+      } else hoverPosition = null;
     }
     if (focusedForecastTrend) (svg.node().querySelector('[data-forecast-trend="' + focusedForecastTrend + '"]') || hit.node()).focus({preventScroll: true});
     else if (focusedForecast) svg.node().querySelector('[data-forecast-marker="' + focusedForecast + '"]')?.focus({preventScroll: true});
@@ -683,7 +731,7 @@
   const finishChartDrag = e => {
     if (!chartDrag || e.pointerId !== chartDrag.pointerId) return;
     if (e.type === 'pointercancel') state.range = chartDrag.original;
-    chartDrag = null; delete chart.dataset.pan; delete chart.dataset.zoom; save(); requestDraw();
+    chartDrag = null; delete chart.dataset.pan; delete chart.dataset.zoom; save(); requestRangeDraw();
     if (chart.hasPointerCapture(e.pointerId)) chart.releasePointerCapture(e.pointerId);
   };
   chart.addEventListener('pointerup', finishChartDrag); chart.addEventListener('pointercancel', finishChartDrag); chart.addEventListener('lostpointercapture', finishChartDrag);
@@ -731,7 +779,7 @@
   const finish = e => {
     if (!gesture || e.pointerId !== gesture.pointerId) return;
     if (e.type === 'pointercancel') state.range = gesture.original;
-    gesture = null; delete nav.dataset.drag; save(); requestDraw();
+    gesture = null; delete nav.dataset.drag; save(); requestRangeDraw();
   };
   nav.addEventListener('pointerup', finish); nav.addEventListener('pointercancel', finish); nav.addEventListener('lostpointercapture', finish);
   nav.addEventListener('keydown', e => {

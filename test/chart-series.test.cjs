@@ -75,3 +75,46 @@ test('base cumulative and usage axes keep their independent units and existing r
   assert.equal(refs.maximum / normal.maximum, refs.unscaledMaximum / normal.unscaledMaximum);
   assert.equal(chart.limits(plotted, [0, 10]).maximum, 540);
 });
+// 대량 기록 성능: 이분 탐색·M4 간추림이 전체 점 기준 결과와 같아야 한다.
+const gapsModule = require('../media/gaps.js');
+function denseSeries(count, step = 60000) {
+  let seed = 7; const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  return Array.from({length: count}, (_, i) => ({time: i * step, y: i % 97 === 0 ? null : random() * 100, continuous: i % 311 !== 0}));
+}
+function bruteValues(points, bridges, domain, field = 'y') {
+  const found = points.filter(p => p.time >= domain[0] && p.time <= domain[1] && Number.isFinite(p[field])).map(p => p[field]);
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    if (!b.continuous || !Number.isFinite(a[field]) || !Number.isFinite(b[field]) || b.time <= a.time) continue;
+    for (const edge of domain) if (a.time < edge && edge < b.time) found.push(gapsModule.at([a, b], field, edge));
+  }
+  return found.concat(gapsModule.visible(bridges, field, domain));
+}
+test('windowed values() equals the brute-force scan for edges inside, between and outside samples', () => {
+  const points = denseSeries(5000), bridges = gapsModule.bridges(points, 'y'), end = points.at(-1).time;
+  for (const domain of [[0, end], [-5e6, 1e6], [123456, 7654321], [60000 * 100 + 1, 60000 * 100 + 59999], [end - 1000, end + 1e9], [end + 1, end + 2], [5e5, 5e5]]) {
+    const fast = chart.values(points, bridges, domain), slow = bruteValues(points, bridges, domain);
+    assert.deepEqual([...fast].sort((a, b) => a - b), slow.sort((a, b) => a - b), JSON.stringify(domain));
+  }
+});
+test('decimate keeps first, last, min and max of every pixel column and bounds the output by width', () => {
+  const points = denseSeries(50000).filter(p => p.y !== null), end = points.at(-1).time, width = 1000;
+  const px = p => p.time / end * width, py = p => p.y;
+  const out = chart.decimate(points, [0, end], px, py);
+  assert.ok(out.length <= 4 * (width + 2), `kept ${out.length}`);
+  assert.deepEqual(out.map(p => p.time), [...out].sort((a, b) => a.time - b.time).map(p => p.time));
+  const columns = new Map();
+  for (const p of points) {const c = Math.floor(px(p)); if (!columns.has(c)) columns.set(c, []); columns.get(c).push(p);}
+  const kept = new Set(out);
+  for (const group of columns.values()) {
+    const lo = group.reduce((a, b) => b.y < a.y ? b : a), hi = group.reduce((a, b) => b.y > a.y ? b : a);
+    for (const p of [group[0], group.at(-1), lo, hi]) assert.ok(kept.has(p), 'column extreme dropped');
+  }
+});
+test('decimate drops points outside the viewport but keeps the neighbours that cross its edges', () => {
+  const points = Array.from({length: 1000}, (_, i) => ({time: i * 10, y: i % 7}));
+  const out = chart.decimate(points, [2000, 3000], p => p.time / 10, p => p.y);
+  assert.ok(out[0].time <= 2000 && out[0].time >= 1990);
+  assert.ok(out.at(-1).time >= 3000 && out.at(-1).time <= 3010);
+  assert.ok(out.length < 400);
+});

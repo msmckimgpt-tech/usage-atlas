@@ -69,12 +69,16 @@
     if (basis === 'base' && mode !== 'total') return [true, false].map(known => ({id, w, known, points: points.map((p, i) => ({...p, y: p.calibrated === known ? p.y : null, continuous: p.continuous && i > 0 && points[i - 1].calibrated === known}))}));
     return [{id, w, known, points}];
   }
+  // 시간순 배열에서 time 이상인 첫 위치(lower bound)와 time 초과인 첫 위치(upper bound)를 이분 탐색한다.
+  const lowerBound = (points, time) => {let a = 0, b = points.length; while (a < b) {const m = (a + b) >> 1; if (points[m].time < time) a = m + 1; else b = m;} return a;};
+  const upperBound = (points, time, from = 0) => {let a = from, b = points.length; while (a < b) {const m = (a + b) >> 1; if (points[m].time <= time) a = m + 1; else b = m;} return a;};
   function values(points, bridges, domain, field = 'y') {
-    const found = points.filter(p => p.time >= domain[0] && p.time <= domain[1] && number(p[field])).map(p => p[field]);
-    for (let i = 1; i < points.length; i++) {
-      const a = points[i - 1], b = points[i];
-      if (!b.continuous || !number(a[field]) || !number(b[field]) || b.time <= a.time) continue;
-      for (const edge of domain) if (a.time < edge && edge < b.time) found.push(gaps.at([a, b], field, edge));
+    const lo = lowerBound(points, domain[0]), hi = upperBound(points, domain[1], lo), found = [];
+    for (let i = lo; i < hi; i++) if (number(points[i][field])) found.push(points[i][field]);
+    // 가장자리를 가로지르는 선분은 경계의 보간값만 더한다. 시간순 점에서는 가장자리마다 한 쌍뿐이다.
+    for (const edge of domain) {
+      const i = lowerBound(points, edge), a = points[i - 1], b = points[i];
+      if (a && b && b.continuous && number(a[field]) && number(b[field]) && a.time < edge && edge < b.time) found.push(gaps.at([a, b], field, edge));
     }
     return found.concat(gaps.visible(bridges, field, domain));
   }
@@ -98,5 +102,22 @@
     const maximum = Math.max(0, ...series.filter(item => item.billing).flatMap(item => values(item.points, item.bridges || gaps.bridges(item.points, 'y'), domain)));
     return (mode === 'delta' ? maximum > 0 ? Math.max(.000001, maximum) : 1 : Math.max(100, maximum)) * 1.08;
   }
-  return {quota, values, limits, billingMaximum, stabilize, events, smoothing};
+  // 보이는 시간 범위만 잘라 픽셀 열마다 첫·마지막·최소·최대 점(M4)만 남긴다. 래스터 결과는 전체 점과 같고 점 수는 폭에 비례한다.
+  function decimate(points, domain, px, py) {
+    const first0 = lowerBound(points, domain[0]), lo = Math.max(0, first0 - 1), hi = Math.min(points.length, upperBound(points, domain[1], first0) + 1);
+    const out = []; let column = NaN, first = 0, last = 0, low = 0, high = 0, lowY = 0, highY = 0;
+    const flush = () => {
+      if (column !== column) return;
+      const picks = [first, low, high, last].sort((a, b) => a - b);
+      for (let i = 0; i < picks.length; i++) if (i === 0 || picks[i] !== picks[i - 1]) out.push(points[picks[i]]);
+    };
+    for (let i = lo; i < hi; i++) {
+      const p = points[i], c = Math.floor(px(p)), y = py(p);
+      if (c !== column) {flush(); column = c; first = last = low = high = i; lowY = highY = y;}
+      else {last = i; if (y < lowY) {lowY = y; low = i;} if (y > highY) {highY = y; high = i;}}
+    }
+    flush();
+    return out;
+  }
+  return {quota, values, limits, billingMaximum, stabilize, events, smoothing, decimate, lowerBound, upperBound};
 });

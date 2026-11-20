@@ -2,7 +2,7 @@
   "name": "usage-atlas"
 , "displayName": "Usage Atlas"
 , "description": "Codex, Claude Code, Antigravity 사용량 기록과 계획"
-, "version": "0.3.19"
+, "version": "0.3.20"
 , "publisher": "msmckimgpt-tech"
 , "icon": "media/icon.png"
 , "galleryBanner": {
@@ -174,7 +174,7 @@
           , "default": 14
           , "minimum": 0
           , "maximum": 100
-          , "description": "차트 상세 툴팁 배경 투명도(%). 0은 불투명, 100은 투명. 글자는 유지합니다."
+          , "description": "차트 상세 툴팁 배경 투명도(%). 0은 불투명, 100은 투명이며 글자는 유지합니다."
           , "order": 50
           }
         , "usageAtlas.codexCreditDecimals": {
@@ -332,21 +332,21 @@
             "type": "string"
           , "default": ""
           , "scope": "machine"
-          , "description": "Codex 실행 파일. 비우면 공식 확장에 포함된 실행 파일을 우선 사용"
+          , "description": "Codex 실행 파일 경로입니다. 비우면 공식 확장에 포함된 실행 파일을 우선 사용합니다."
           , "order": 20
           }
         , "usageAtlas.claudeCompatibilityApi": {
             "type": "boolean"
           , "default": true
           , "scope": "machine"
-          , "description": "기존 Claude 로그인으로 Anthropic 사용량 호환 API 조회. 공개 API 계약이 아니므로 변경될 수 있음. 토큰은 저장·갱신하지 않음"
+          , "description": "기존 Claude 로그인으로 Anthropic 사용량 호환 API를 조회합니다. 공개 API 계약이 아니므로 변경될 수 있으며 토큰은 저장·갱신하지 않습니다."
           , "order": 30
           }
         , "usageAtlas.claudeConfigDir": {
             "type": "string"
           , "default": ""
           , "scope": "machine"
-          , "description": "Claude 설정 디렉터리. 비우면 CLAUDE_CONFIG_DIR 또는 ~/.claude"
+          , "description": "Claude 설정 디렉터리입니다. 비우면 CLAUDE_CONFIG_DIR 또는 ~/.claude를 사용합니다."
           , "order": 40
           }
         , "usageAtlas.antigravityEnabled": {

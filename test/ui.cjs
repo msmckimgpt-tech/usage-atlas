@@ -83,7 +83,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     };
     const hoverTrace = async (key, ratio = .5) => {
       let hoveredPoint;
-      const candidates = await page.locator(`path[data-series="${key}"]`).filter({hasNot: page.locator('title')}).evaluateAll((nodes, ratio) => nodes.filter(n=>n.__data__?.length > 2).flatMap(node=>[ratio,.15,.3,.45,.6,.75,.9].map(r=>{
+      const candidates = await page.locator(`path[data-series="${key}"]`).filter({hasNot: page.locator('title')}).evaluateAll((nodes, ratio) => nodes.filter(n=>n.__data__?.length > 2).flatMap(node=>[ratio,.05,.15,.25,.35,.45,.55,.65,.75,.85,.95].map(r=>{
         const p = node.getPointAtLength(node.getTotalLength() * r), matrix = node.getScreenCTM();
         return {x: p.x * matrix.a + p.y * matrix.c + matrix.e, y: p.x * matrix.b + p.y * matrix.d + matrix.f};
       })), ratio);

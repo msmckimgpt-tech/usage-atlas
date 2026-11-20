@@ -35,7 +35,7 @@
   const symbolPath = (type, size) => {const key = type + size; let d = symbolCache.get(key); if (d === undefined) symbolCache.set(key, d = d3.symbol().type(symbolTypes[type]).size(size)()); return d;};
   // 강조 색인은 그릴 때 DOM 탐색 없이 직접 채우고, 바뀐 노드만 갱신한다.
   let traceIndex = [];
-  const addTrace = (sel, key, owner, highlightable, op = 1) => {traceIndex.push({node: sel.node(), key, owner, highlightable, op, opSet: op === 1, muted: false, highlighted: false}); return sel;};
+  const addTrace = (sel, key, owner, highlightable, op = 1) => {const node = sel.node(); node.classList.add('ua-trace'); traceIndex.push({node, key, owner, highlightable, op, opSet: op === 1, muted: false, highlighted: false}); return sel;};
   function emphasize(provider, series = null) {
     const target = providerVisibility.visible(ids, state.hiddenProviders).includes(provider) ? provider : null;
     const stamp = series ? 'series:' + series : 'provider:' + (target || '');
@@ -283,7 +283,7 @@
     navWidth = el('navigator').clientWidth;
     if (!skipChrome || !axisFont) axisFont = `12px ${getComputedStyle(root).fontFamily}`;
     if (!skipChrome) {sync(); providerInfo();}
-    el('tooltip').hidden = true; lastTipKey = ''; traceIndex = [];
+    el('tooltip').hidden = true; el('guide').hidden = true; el('selection').hidden = true; lastTipKey = ''; traceIndex = [];
     const svg = d3.select(el('chart')); svg.selectAll('*').remove();
     const width = Math.max(240, chartBox.width), narrow = width < 700;
     const height = Math.max(200, chartBox.height), left = narrow ? 42 : 58, right = Math.max(left + 60, width - 12), top = 32;
@@ -392,22 +392,35 @@
     }
     const pointMarks = [], inDomain = points => points[0].time <= domain[1] && points.at(-1).time >= domain[0];
     for (const s of data) {
-      const key = `${s.id}-${s.w}`, op = s.w === 'week' ? .95 : .82, ys = scale(s);
+      const key = `${s.id}-${s.w}`, op = s.w === 'week' ? .95 : .82, ys = scale(s), lineGen = d3.line().x(p => x(p.time)).y(p => ys(p.y));
+      const dParts = [], combined = [], singles = [];
       for (const points of s.chunks) {
         if (!inDomain(points)) continue;
-        if (points.length === 1) {addTrace(marker(g, s.id, x(points[0].time), ys(points[0].y), 25).datum(points).attr('data-series', key).attr('data-series-known', s.known), key, s.id, true, 1); pointMarks.push({s, p: points[0], ys});}
-        else addTrace(g.append('path').datum(points).attr('data-series', key).attr('d', d3.line().x(p => x(p.time)).y(p => ys(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => ys(p.y)))).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', s.w === 'week' ? 1.1 : .9).attr('opacity', op).attr('stroke-dasharray', dash(s.w)).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round'), key, s.id, true, op);
+        if (points.length === 1) singles.push(points);
+        else {dParts.push(lineGen(chartGraphs.decimate(points, domain, p => x(p.time), p => ys(p.y)))); for (const p of points) combined.push(p);}
       }
+      const lastLineTime = combined.length ? combined.at(-1).time : -Infinity;
+      const emitSingle = points => {addTrace(marker(g, s.id, x(points[0].time), ys(points[0].y), 25).datum(points).attr('data-series', key).attr('data-series-known', s.known), key, s.id, true, 1); pointMarks.push({s, p: points[0], ys});};
+      for (const points of singles) if (points[0].time < lastLineTime) emitSingle(points);
+      if (dParts.length) addTrace(g.append('path').datum(combined).attr('data-series', key).attr('data-series-known', s.known).attr('data-chunks', dParts.length).attr('d', dParts.join('')).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', s.w === 'week' ? 1.1 : .9).attr('opacity', op).attr('stroke-dasharray', dash(s.w)).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round'), key, s.id, true, op);
+      for (const points of singles) if (points[0].time >= lastLineTime) emitSingle(points);
     }
     for (const s of nativeData) {
-      const cy = scale(s), key = seriesKey(s);
+      const cy = scale(s), key = seriesKey(s), lineGen = d3.line().x(p => x(p.time)).y(p => cy(p.y));
+      const dParts = [], combined = [], singles = [];
       for (const points of s.chunks) {
         if (!inDomain(points)) continue;
-        const single = points.length === 1;
-        const node = single ? marker(g, s.id, x(points[0].time), cy(points[0].y), 25) : g.append('path').datum(points).attr('d', d3.line().x(p => x(p.time)).y(p => cy(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => cy(p.y)))).attr('stroke', colors[s.id]).attr('stroke-width', .8).attr('stroke-dasharray', s.creditWindow === 'week' ? '5 3 1 3' : dash('money')).attr('fill', 'none').attr('opacity', .68).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
-        addTrace(node.datum(points).attr('data-series', key).attr('data-series-known', s.known).attr('data-credit-unit', creditUnit(s.id)).attr('data-credit-window', s.creditWindow), key, s.id, true, single ? 1 : .68);
-        if (single) pointMarks.push({s, p: points[0], ys: cy});
+        if (points.length === 1) singles.push(points);
+        else {dParts.push(lineGen(chartGraphs.decimate(points, domain, p => x(p.time), p => cy(p.y)))); for (const p of points) combined.push(p);}
       }
+      const lastLineTime = combined.length ? combined.at(-1).time : -Infinity;
+      const emitSingle = points => {
+        addTrace(marker(g, s.id, x(points[0].time), cy(points[0].y), 25).datum(points).attr('data-series', key).attr('data-series-known', s.known).attr('data-credit-unit', creditUnit(s.id)).attr('data-credit-window', s.creditWindow), key, s.id, true, 1);
+        pointMarks.push({s, p: points[0], ys: cy});
+      };
+      for (const points of singles) if (points[0].time < lastLineTime) emitSingle(points);
+      if (dParts.length) addTrace(g.append('path').datum(combined).attr('d', dParts.join('')).attr('stroke', colors[s.id]).attr('stroke-width', .8).attr('stroke-dasharray', s.creditWindow === 'week' ? '5 3 1 3' : dash('money')).attr('fill', 'none').attr('opacity', .68).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round').attr('data-series', key).attr('data-series-known', s.known).attr('data-chunks', dParts.length).attr('data-credit-unit', creditUnit(s.id)).attr('data-credit-window', s.creditWindow), key, s.id, true, .68);
+      for (const points of singles) if (points[0].time >= lastLineTime) emitSingle(points);
     }
     const interpolated = [];
     const bridgeLine = (s, segments, field, ys) => {
@@ -472,11 +485,11 @@
       svg.append('line').attr('x1', x(r.time)).attr('x2', px + w).attr('y1', bottom + 3).attr('y2', py - 5).attr('stroke', colors[r.id]).attr('opacity', .5);
     }
     if (!all.length) text('사용량 수집 대기', (left + right) / 2, (top + bottom) / 2).attr('text-anchor', 'middle');
-    const guide = g.append('line').attr('y1', top).attr('y2', bottom).attr('stroke', 'var(--ua-muted)').attr('visibility', 'hidden');
-    const selection = g.append('rect').attr('y', top).attr('height', bottom - top).attr('width', 0).attr('fill', 'var(--ua-text)').attr('opacity', .12);
+    const guide = el('guide'), selection = el('selection');
+    guide.style.height = (bottom - top) + 'px'; selection.style.height = (bottom - top) + 'px';
     const hit = svg.append('rect').attr('data-chart-hit', '').attr('tabindex', 0).attr('role', 'application').attr('aria-label', '사용량 그래프. 중간 버튼 드래그 수평 이동, 우클릭 드래그 중앙 기준 핀치 확대 축소, Ctrl 휠 마우스 위치 기준 확대 축소, Shift 휠 수평 이동. 좌우 방향키 탐색, 더하기 빼기 확대 축소, Home 설정한 기본 기간').attr('x', left).attr('y', top).attr('width', right - left).attr('height', bottom - top).attr('fill', 'transparent').style('touch-action', 'pan-y');
     let down = null, press = null, cursor = Math.min(model.now, domain[1]), tipRows = [];
-    const clear = () => {hoverPosition = null; lastTipKey = ''; el('tooltip').hidden = true; delete el('tooltip').dataset.series; delete el('tooltip').dataset.detail; guide.attr('visibility', 'hidden'); emphasize(hoveredProvider);};
+    const clear = () => {hoverPosition = null; lastTipKey = ''; el('tooltip').hidden = true; delete el('tooltip').dataset.series; delete el('tooltip').dataset.detail; guide.hidden = true; emphasize(hoveredProvider);};
     const tipLine = (text, active = false) => {tipRows.push({text, active});};
     const traces = [...data.map(s => ({...s, ys: scale(s), value: p => p.y})), ...nativeData.map(s => ({...s, ys: scale(s), value: p => p.y})), ...interpolated];
     const near = (s, px, py, time) => {
@@ -579,7 +592,7 @@
       return {s, value: gaps.at([a, b], 'y', time), distance: Math.hypot(px - ax - ratio * dx, py - ay - ratio * dy)};
     };
     const show = (px, py) => {
-      const time = x.invert(px); cursor = time; guide.attr('x1', px).attr('x2', px).attr('visibility', 'visible');
+      const time = x.invert(px); cursor = time; guide.style.transform = `translate3d(${px}px,${top}px,0)`; guide.hidden = false;
       const matches = number(py) ? traces.map(s => near(s, px, py, time)).filter(p => p && p.distance <= 8).sort((a, b) => a.distance - b.distance) : [];
       const selectedBySeries = new Map();
       for (const match of matches.filter(p => p.distance <= matches[0].distance + .75)) {
@@ -636,7 +649,6 @@
         tipSeries = seriesKey(selected[0].s);
         for (const {s, p} of selected) seriesTip(s, s.w === 'credit' ? p.amount : s.interpolated ? p.value : s.value(p), s.interpolated || p.estimated, s.interpolated ? p.value : s.value(p));
       }
-      emphasize(hoveredProvider, activeSeries);
       const tip = el('tooltip');
       const tipKey = `${tipSeries || ''}\0${tipDetail || ''}\0${tipRows.map(r => (r.active ? '1' : '0') + r.text).join('\n')}`;
       if (tipKey !== lastTipKey || tip.hidden) {
@@ -650,6 +662,7 @@
       const tx = Math.max(4, Math.min(width - tipW - 4, px + tipW + 12 > width ? px - tipW - 12 : px + 12));
       const ty = Math.max(top, Math.min(bottom - tipH, number(py) ? py + 12 : top + 12));
       tip.style.transform = `translate3d(${tx}px,${ty}px,0)`;
+      emphasize(hoveredProvider, activeSeries);
     };
     svg.selectAll('[data-forecast-trend]').on('focus.forecast', function() {
       const s = this.__data__, time = (Math.max(domain[0], s.points[0].time) + Math.min(domain[1], s.points.at(-1).time)) / 2;
@@ -669,7 +682,7 @@
       hoverPosition = {x: e.clientX, y: e.clientY};
       const [p, py] = pt(e); show(p, py);
       if (press && e.pointerId === press.id) press.movement = Math.max(press.movement, Math.hypot(e.clientX - press.x, e.clientY - press.y));
-      if (down !== null) selection.attr('x', Math.min(p, down)).attr('width', Math.abs(p - down));
+      if (down !== null) {selection.style.transform = `translate3d(${Math.min(p, down)}px,${top}px,0)`; selection.style.width = Math.abs(p - down) + 'px'; selection.hidden = false;}
     });
     hit.on('pointerup', e => {
       if (!press || e.pointerId !== press.id || e.button !== 0) return;
@@ -683,10 +696,10 @@
           target.focus({preventScroll: true}); clear(); openDetails(match.s, match.p.time, target);
         }
       }
-      down = null; press = null; selection.attr('width', 0);
+      down = null; press = null; selection.hidden = true;
       if (hit.node().hasPointerCapture(e.pointerId)) hit.node().releasePointerCapture(e.pointerId);
     });
-    const cancelPress = () => {down = null; press = null; selection.attr('width', 0); clear();};
+    const cancelPress = () => {down = null; press = null; selection.hidden = true; clear();};
     hit.on('pointercancel', cancelPress); hit.on('lostpointercapture', () => {if (press) cancelPress();});
     hit.on('pointerleave', () => {if (down === null) clear();});
     hit.on('dblclick', e => {if (e.button === 0) resetRange();});

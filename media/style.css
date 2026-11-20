@@ -65,7 +65,9 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 #usage-atlas #ua-chart .ua-inside-axis{paint-order:stroke;stroke:var(--ua-bg);stroke-width:4px;stroke-linejoin:round;pointer-events:none}
 #usage-atlas #ua-chart .ua-focus{stroke:var(--ua-focus);stroke-width:2}
 #usage-atlas #ua-chart [data-chart-hit]:focus{outline:none}
-#usage-atlas .ua-tip{position:absolute;left:0;top:0;z-index:2;pointer-events:none;will-change:transform;background:color-mix(in srgb,var(--ua-bg) var(--ua-tooltip-opacity,86%),transparent);border:1px solid var(--ua-border);border-radius:6px;padding:7px 10px;width:max-content;max-width:calc(100% - 8px);font-size:12px;box-shadow:0 4px 16px #0003}
+#usage-atlas .ua-guide{position:absolute;left:0;top:0;width:1px;z-index:1;pointer-events:none;background:var(--ua-muted);will-change:transform}
+#usage-atlas .ua-selection{position:absolute;left:0;top:0;z-index:1;pointer-events:none;background:var(--ua-text);opacity:.12;will-change:transform}
+#usage-atlas .ua-tip{position:absolute;left:0;top:0;z-index:2;pointer-events:none;contain:layout style;will-change:transform;background:color-mix(in srgb,var(--ua-bg) var(--ua-tooltip-opacity,86%),transparent);border:1px solid var(--ua-border);border-radius:6px;padding:7px 10px;width:max-content;max-width:calc(100% - 8px);font-size:12px;box-shadow:0 4px 16px #0003}
 #usage-atlas .ua-tip-active{font-weight:600}
 #usage-atlas #ua-chart[data-pan]{cursor:grabbing;user-select:none}
 #usage-atlas #ua-chart[data-zoom]{cursor:zoom-in;user-select:none}
@@ -159,10 +161,10 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
   #usage-atlas .ua-details-footer{padding:6px 10px}
 }
 
-#usage-atlas #ua-chart :is([data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range],[data-forecast-boundary],[data-event],[data-event-line]){transition:opacity .18s cubic-bezier(.22,1,.36,1)}
+#usage-atlas .ua-trace{transition:opacity .18s cubic-bezier(.22,1,.36,1)}
 #usage-atlas .ua-muted-trace{opacity:calc(var(--ua-trace-opacity,1) * .18)}
 #usage-atlas .ua-highlight-trace{opacity:1;stroke-width:1.8}
-@media(prefers-reduced-motion:reduce){#usage-atlas #ua-chart :is([data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range],[data-forecast-boundary],[data-event],[data-event-line]){transition:none}}
+@media(prefers-reduced-motion:reduce){#usage-atlas .ua-trace{transition:none}}
 #usage-atlas .ua-provider[aria-pressed=true]{border-color:var(--c)}
 
 #usage-atlas .ua-conversation-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}

@@ -27,7 +27,7 @@ Codex·Claude Code·Antigravity의 구독 사용량·소진 예측과 확인 가
 CLI로 설치할 수도 있습니다. 파일명은 내려받은 버전에 맞춥니다.
 
 ~~~sh
-code --install-extension ./usage-atlas-0.3.13.vsix
+code --install-extension ./usage-atlas-0.3.14.vsix
 ~~~
 
 확장 ID는 msmckimgpt-tech.usage-atlas입니다. 이전 GitHub 배포판(local-tools.usage-atlas)에서 업데이트하면 첫 실행 때 이전 기록 폴더를 새 폴더로 한 번 복사하며, 이전 폴더는 지우지 않습니다. 이전 확장은 직접 제거하세요. 두 확장을 동시에 켜면 수집이 중복됩니다.

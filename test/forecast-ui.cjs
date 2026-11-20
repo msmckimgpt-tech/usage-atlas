@@ -40,6 +40,7 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     const box = await marker.boundingBox(); await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.waitForSelector('#ua-tooltip[data-detail="forecast"]:not([hidden])');
     assert.equal(await page.locator('#ua-chart').getAttribute('data-highlight-series'), 'codex-five');
+    await page.waitForTimeout(260);
     assert.equal(await page.locator('[data-forecast-trend="codex-five"]').evaluate(node => getComputedStyle(node).strokeWidth), '1.8px');
     assert.match(await page.locator('#ua-tooltip').textContent(), /Codex.*5시간.*100% 소진 예상/);
     assert.ok(await page.locator('#ua-tooltip div').count() <= 5);

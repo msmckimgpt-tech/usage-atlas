@@ -99,6 +99,7 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
       assert.doesNotMatch(await page.locator('#ua-tooltip').textContent(), /미제공|관측 없음/);
       assert.equal(await page.locator('#ua-tooltip').getAttribute('data-detail'), null);
       await compactTooltip();
+      await page.waitForTimeout(260);
       const active = await page.locator('#ua-chart').getAttribute('data-highlight-series');
       assert.equal(active, await page.locator('#ua-tooltip').getAttribute('data-series'));
       const emphasis = await page.locator('[data-series],[data-interpolated]').evaluateAll((nodes, active) => nodes.map(node => ({key: node.dataset.series || node.dataset.interpolated, active: node.classList.contains('ua-highlight-trace'), muted: node.classList.contains('ua-muted-trace'), opacity: +getComputedStyle(node).opacity, width: +getComputedStyle(node).strokeWidth.replace('px', '')})), active);

@@ -28,35 +28,31 @@
   state.creditBasis = ['subscription', 'billing'].includes(model.creditBasis) ? model.creditBasis : defaults.creditBasis;
   let basisPending = null;
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
-  let hoveredProvider = null, emphasizedTarget = null, hoverPosition = null;
-  // 강조 대상은 그릴 때 한 번만 색인한다. 호버마다 DOM을 다시 훑거나 모든 노드에 쓰지 않고, 상태가 바뀐 노드만 갱신한다.
-  const traceSelector = '[data-series],[data-reset],[data-interpolated],[data-cycle-end],[data-forecast],[data-forecast-trend],[data-forecast-marker],[data-forecast-range],[data-forecast-boundary],[data-event],[data-event-line]';
-  const highlightSelector = '[data-series],[data-interpolated],[data-cycle-end],[data-forecast-trend],[data-forecast-marker],[data-forecast-boundary]';
+  let hoveredProvider = null, emphasizedTarget = null, hoverPosition = null, lastEmphasizedSeries = null;
+  let lastTipKey = '', tipW = 0, tipH = 0;
   // 기호 경로 문자열은 모양·크기마다 한 번만 만든다. 위치는 transform으로 옮긴다.
   const symbolTypes = {circle: d3.symbolCircle, diamond: d3.symbolDiamond, triangle: d3.symbolTriangle}, symbolCache = new Map();
   const symbolPath = (type, size) => {const key = type + size; let d = symbolCache.get(key); if (d === undefined) symbolCache.set(key, d = d3.symbol().type(symbolTypes[type]).size(size)()); return d;};
-  // 강조 색인은 실제로 강조가 필요할 때만 만든다. 새로 그린 DOM에는 아직 어떤 클래스도 없다.
-  let traceIndex = null;
-  function indexTraces() {
-    traceIndex = [];
-    for (const node of el('chart').querySelectorAll(traceSelector)) {
-      const key = node.dataset.series || node.dataset.reset || node.dataset.interpolated || node.dataset.cycleEnd || node.dataset.forecast || node.dataset.forecastTrend || node.dataset.forecastMarker || node.dataset.forecastRange || node.dataset.forecastBoundary || node.dataset.event || node.dataset.eventLine || '';
-      node.style.setProperty('--ua-trace-opacity', node.getAttribute('opacity') || '1');
-      traceIndex.push({node, key, owner: providerKeys.find(id => key === id || key.startsWith(id + '-')), highlightable: node.matches(highlightSelector), muted: false, highlighted: false});
-    }
-  }
+  // 강조 색인은 그릴 때 DOM 탐색 없이 직접 채우고, 바뀐 노드만 갱신한다.
+  let traceIndex = [];
+  const addTrace = (sel, key, owner, highlightable, op = 1) => {traceIndex.push({node: sel.node(), key, owner, highlightable, op, opSet: op === 1, muted: false, highlighted: false}); return sel;};
   function emphasize(provider, series = null) {
     const target = providerVisibility.visible(ids, state.hiddenProviders).includes(provider) ? provider : null;
     const stamp = series ? 'series:' + series : 'provider:' + (target || '');
+    lastEmphasizedSeries = series;
     if (stamp === emphasizedTarget) return;
     emphasizedTarget = stamp;
     const chart = el('chart');
     if (series) chart.dataset.highlightSeries = series; else delete chart.dataset.highlightSeries;
-    if (!traceIndex) {if (!series && !target) return; indexTraces();}
+    if (!traceIndex.length) return;
     for (const item of traceIndex) {
       const muted = Boolean(series ? item.owner && item.key !== series : target && item.owner && item.owner !== target);
       const highlighted = Boolean(series && item.key === series && item.highlightable);
-      if (muted !== item.muted) {item.muted = muted; item.node.classList.toggle('ua-muted-trace', muted);}
+      if (muted !== item.muted) {
+        item.muted = muted;
+        if (muted && !item.opSet) {item.opSet = true; item.node.style.setProperty('--ua-trace-opacity', String(item.op));}
+        item.node.classList.toggle('ua-muted-trace', muted);
+      }
       if (highlighted !== item.highlighted) {item.highlighted = highlighted; item.node.classList.toggle('ua-highlight-trace', highlighted);}
     }
   }
@@ -99,8 +95,10 @@
     return [start, start + span];
   }
   function setRange(range, persist = true) {
-    state.range = bounded(range, view.extent);
-    view.domain = state.range;
+    const next = bounded(range, view.extent);
+    if (view.domain && next[0] === view.domain[0] && next[1] === view.domain[1]) return;
+    state.range = next;
+    view.domain = next;
     if (persist) save();
     requestRangeDraw();
   }
@@ -251,11 +249,12 @@
     const key = [state.mode, state.basis, state.credit, state.creditMode, state.creditBasis, displayCreditMode(), model.antigravitySmoothingMinutes, visible.join()].join('|');
     if (derived && derived.model === model && derived.key === key) return derived;
     const quotas = new Map(visible.flatMap(id => ['five', 'week'].map(w => [id + '-' + w, quota(id, w)])));
-    const data = [...quotas.values()].flat().map(s => ({...s, bridges: gaps.bridges(s.points, 'y'), chunks: chunkify(s.points, p => !p.continuous)}));
+    const data = [...quotas.values()].flat().map(s => ({...s, hasData: s.points.some(p => number(p.y)), hasEstimated: s.points.some(p => p.estimated), bridges: gaps.bridges(s.points, 'y'), chunks: chunkify(s.points, p => !p.continuous)}));
     const all = ids.flatMap(id => Object.values(model.data[id]?.windows || {}).flat());
     const events = visible.flatMap(id => chartGraphs.events(model.data[id], id, {...state, antigravitySmoothingMinutes: model.antigravitySmoothingMinutes}).map(e => ({...e, id, w: e.window}))).filter(e => e.kind !== 'scheduled-reset');
     const nativeCredits = visible.filter(id => state.credit && creditAvailable(id) && displayCreditMode() === 'money' && model.data[id]?.ledger.some(p => number(p.credit?.[state.mode])));
-    const nativeData = nativeCredits.flatMap(id => creditGraphs.series(model.data[id], id, state)).map(s => ({...s, bridges: gaps.bridges(s.points, 'y'), chunks: chunkify(s.points, p => p.continuous === false)}));
+    const nativeData = nativeCredits.flatMap(id => creditGraphs.series(model.data[id], id, state)).map(s => ({...s, hasData: s.points.some(p => number(p.y)), hasEstimated: s.points.some(p => p.estimated), bridges: gaps.bridges(s.points, 'y'), chunks: chunkify(s.points, p => p.continuous === false)}));
+    const hasEstimated = data.some(s => s.hasEstimated) || nativeData.some(s => s.hasEstimated);
     const nativePoints = Object.fromEntries(nativeCredits.map(id => [id, creditPoints(id)]));
     const nativeBridges = Object.fromEntries(nativeCredits.map(id => [id, gaps.bridges(nativePoints[id], 'amount')]));
     const cycleEnds = [];
@@ -268,7 +267,7 @@
       }
     }
     const firstTime = model.firstObserved ?? all.reduce((min, p) => p.time < min ? p.time : min, Infinity);
-    derived = {model, key, visible, quotas, data, all, events, nativeCredits, nativeData, nativePoints, nativeBridges, cycleEnds, firstTime: Number.isFinite(firstTime) ? firstTime : undefined};
+    derived = {model, key, visible, quotas, data, all, events, nativeCredits, nativeData, nativePoints, nativeBridges, cycleEnds, hasEstimated, firstTime: Number.isFinite(firstTime) ? firstTime : undefined};
     return derived;
   }
   function draw() {
@@ -284,12 +283,12 @@
     navWidth = el('navigator').clientWidth;
     if (!skipChrome || !axisFont) axisFont = `12px ${getComputedStyle(root).fontFamily}`;
     if (!skipChrome) {sync(); providerInfo();}
-    el('tooltip').hidden = true;
+    el('tooltip').hidden = true; lastTipKey = ''; traceIndex = [];
     const svg = d3.select(el('chart')); svg.selectAll('*').remove();
     const width = Math.max(240, chartBox.width), narrow = width < 700;
     const height = Math.max(200, chartBox.height), left = narrow ? 42 : 58, right = Math.max(left + 60, width - 12), top = 32;
     svg.attr('viewBox', `0 0 ${width} ${height}`).attr('height', height);
-    const {visible, quotas, data, all, events, nativeCredits, nativeData, nativePoints, nativeBridges, cycleEnds: cycleEndList, firstTime} = derive();
+    const {visible, quotas, data, all, events, nativeCredits, nativeData, nativePoints, nativeBridges, cycleEnds: cycleEndList, hasEstimated, firstTime} = derive();
     const resets = visible.flatMap(id => ['five', 'week'].map(w => ({id, w, time: model.data[id]?.last?.windows[w]?.reset}))).filter(r => number(r.time) && r.time > model.now);
     const start = firstTime ?? model.now;
     // 첫 기록이 최근이어도 현재를 중앙에 놓도록 과거 빈 구간을 확보한다.
@@ -341,7 +340,7 @@
     }));
     const text = (s, px, py, cls = '') => svg.append('text').attr('x', px).attr('y', py).attr('class', cls).text(s);
     const marker = (g, id, px, py, size = 40) => g.append('path').attr('d', symbolPath(id === 'codex' ? 'circle' : 'diamond', size)).attr('transform', `translate(${px},${py})`).attr('fill', colors[id]).attr('stroke', 'var(--ua-bg)').attr('vector-effect', 'non-scaling-stroke');
-    const estimated = [...data, ...nativeData].some(s => s.points.some(p => p.estimated)) || forecastTrends.length > 0;
+    const estimated = hasEstimated || forecastTrends.length > 0;
     const pendingEstimate = state.credit && state.creditBasis !== 'billing' && visible.some(id => !canEstimate(id));
     const rawAxis = state.mode === 'total' ? '미환산 pp' : state.mode === 'delta' ? '원본 pp' : '원본 %';
     text((state.mode === 'delta' ? '변화량 pp' : state.mode === 'total' ? rawTotal && !split ? '관측 누적 pp' : '관측 누적 %' : split ? '기본 용량 %' : '사용률 %') + (estimated ? pendingEstimate ? ' (일부 추정)' : ' (추정)' : pendingEstimate ? ' · 환산 대기' : ''), left, top - 14, 'ua-axis');
@@ -387,32 +386,37 @@
     }
     const eventMarks = [...eventGroups.values()].map(group => ({...(group.findLast(e => e.kind === 'early-reset') || group.at(-1)), count: group.length}));
     for (const e of eventMarks) {
-      const px = x(e.time), py = top + 12 + (e.w === 'week' ? 12 : 0);
-      if (e.kind === 'early-reset') g.append('line').attr('data-event-line', `${e.id}-${e.w}`).attr('x1', px).attr('x2', px).attr('y1', top).attr('y2', bottom).attr('stroke', colors[e.id]).attr('stroke-dasharray', '2 5').attr('opacity', .38);
-      g.append('path').attr('data-event', `${e.id}-${e.w}`).attr('data-event-kind', e.kind).attr('data-event-count', e.count).attr('data-time', e.time).attr('d', symbolPath(e.kind === 'early-reset' ? 'triangle' : 'diamond', 50)).attr('transform', `translate(${px},${py})`).attr('fill', colors[e.id]).attr('stroke', 'var(--ua-bg)');
+      const px = x(e.time), py = top + 12 + (e.w === 'week' ? 12 : 0), key = `${e.id}-${e.w}`;
+      if (e.kind === 'early-reset') addTrace(g.append('line').attr('data-event-line', key).attr('x1', px).attr('x2', px).attr('y1', top).attr('y2', bottom).attr('stroke', colors[e.id]).attr('stroke-dasharray', '2 5').attr('opacity', .38), key, e.id, false, .38);
+      addTrace(g.append('path').attr('data-event', key).attr('data-event-kind', e.kind).attr('data-event-count', e.count).attr('data-time', e.time).attr('d', symbolPath(e.kind === 'early-reset' ? 'triangle' : 'diamond', 50)).attr('transform', `translate(${px},${py})`).attr('fill', colors[e.id]).attr('stroke', 'var(--ua-bg)'), key, e.id, false, 1);
     }
     const pointMarks = [], inDomain = points => points[0].time <= domain[1] && points.at(-1).time >= domain[0];
     for (const s of data) {
+      const key = `${s.id}-${s.w}`, op = s.w === 'week' ? .95 : .82, ys = scale(s);
       for (const points of s.chunks) {
         if (!inDomain(points)) continue;
-        if (points.length === 1) {marker(g, s.id, x(points[0].time), scale(s)(points[0].y), 25).datum(points).attr('data-series', `${s.id}-${s.w}`).attr('data-series-known', s.known); pointMarks.push({s, p: points[0], ys: scale(s)});}
-        else if (inDomain(points)) g.append('path').datum(points).attr('data-series', `${s.id}-${s.w}`).attr('d', d3.line().x(p => x(p.time)).y(p => scale(s)(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => scale(s)(p.y)))).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', s.w === 'week' ? 1.1 : .9).attr('opacity', s.w === 'week' ? .95 : .82).attr('stroke-dasharray', dash(s.w)).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+        if (points.length === 1) {addTrace(marker(g, s.id, x(points[0].time), ys(points[0].y), 25).datum(points).attr('data-series', key).attr('data-series-known', s.known), key, s.id, true, 1); pointMarks.push({s, p: points[0], ys});}
+        else addTrace(g.append('path').datum(points).attr('data-series', key).attr('d', d3.line().x(p => x(p.time)).y(p => ys(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => ys(p.y)))).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', s.w === 'week' ? 1.1 : .9).attr('opacity', op).attr('stroke-dasharray', dash(s.w)).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round'), key, s.id, true, op);
       }
     }
     for (const s of nativeData) {
-      const cy = scale(s);
+      const cy = scale(s), key = seriesKey(s);
       for (const points of s.chunks) {
         if (!inDomain(points)) continue;
-        const node = points.length === 1 ? marker(g, s.id, x(points[0].time), cy(points[0].y), 25) : g.append('path').datum(points).attr('d', d3.line().x(p => x(p.time)).y(p => cy(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => cy(p.y)))).attr('stroke', colors[s.id]).attr('stroke-width', .8).attr('stroke-dasharray', s.creditWindow === 'week' ? '5 3 1 3' : dash('money')).attr('fill', 'none').attr('opacity', .68).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
-        node.datum(points).attr('data-series', seriesKey(s)).attr('data-series-known', s.known).attr('data-credit-unit', creditUnit(s.id)).attr('data-credit-window', s.creditWindow);
-        if (points.length === 1) pointMarks.push({s, p: points[0], ys: cy});
+        const single = points.length === 1;
+        const node = single ? marker(g, s.id, x(points[0].time), cy(points[0].y), 25) : g.append('path').datum(points).attr('d', d3.line().x(p => x(p.time)).y(p => cy(p.y))(chartGraphs.decimate(points, domain, p => x(p.time), p => cy(p.y)))).attr('stroke', colors[s.id]).attr('stroke-width', .8).attr('stroke-dasharray', s.creditWindow === 'week' ? '5 3 1 3' : dash('money')).attr('fill', 'none').attr('opacity', .68).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+        addTrace(node.datum(points).attr('data-series', key).attr('data-series-known', s.known).attr('data-credit-unit', creditUnit(s.id)).attr('data-credit-window', s.creditWindow), key, s.id, true, single ? 1 : .68);
+        if (single) pointMarks.push({s, p: points[0], ys: cy});
       }
     }
     const interpolated = [];
     const bridgeLine = (s, segments, field, ys) => {
       if (!segments.length) return;
-      g.append('path').attr('data-interpolated', seriesKey(s)).attr('data-series-known', s.known).datum(segments).attr('d', segments.map(pair => `M${x(pair[0].time)},${ys(pair[0][field])}L${x(pair[1].time)},${ys(pair[1][field])}`).join('')).attr('fill','none').attr('stroke',colors[s.id]).attr('stroke-width',.85).attr('stroke-dasharray','3 5').attr('opacity',.5).attr('vector-effect','non-scaling-stroke');
-      interpolated.push({...s, bridges:segments, field, ys, interpolated:true});
+      const visibleSegments = segments.filter(pair => pair[1].time >= domain[0] && pair[0].time <= domain[1]);
+      if (!visibleSegments.length) return;
+      const key = seriesKey(s);
+      addTrace(g.append('path').attr('data-interpolated', key).attr('data-series-known', s.known).datum(visibleSegments).attr('d', visibleSegments.map(pair => `M${x(pair[0].time)},${ys(pair[0][field])}L${x(pair[1].time)},${ys(pair[1][field])}`).join('')).attr('fill','none').attr('stroke',colors[s.id]).attr('stroke-width',.85).attr('stroke-dasharray','3 5').attr('opacity',.5).attr('vector-effect','non-scaling-stroke'), key, s.id, true, .5);
+      interpolated.push({...s, bridges:visibleSegments, field, ys, interpolated:true});
     };
     for (const s of data) bridgeLine(s, s.bridges, 'y', scale(s));
     for (const s of nativeData) bridgeLine(s, s.bridges, 'y', scale(s));
@@ -424,7 +428,7 @@
     // 완료 주기의 실제 마지막 관측점만 표시하며 경계의 마커도 잘리지 않게 한다.
     svg.select('defs').append('clipPath').attr('id', 'ua-marker-clip').append('rect').attr('x', left - 5).attr('y', top - 5).attr('width', right - left + 10).attr('height', bottom - top + 10);
     const ends = svg.append('g').attr('clip-path', 'url(#ua-marker-clip)');
-    for (const {s, p, event} of cycleEnds.values()) marker(ends, s.id, x(p.time), scale(s)(p.y), 30).datum(p).attr('data-cycle-end', `${s.id}-${s.w}`).attr('data-time', p.time).attr('data-reset-kind', event.kind).attr('fill', 'var(--ua-bg)').attr('stroke', colors[s.id]).attr('stroke-width', 1);
+    for (const {s, p, event} of cycleEnds.values()) {const key = `${s.id}-${s.w}`; addTrace(marker(ends, s.id, x(p.time), scale(s)(p.y), 30).datum(p).attr('data-cycle-end', key).attr('data-time', p.time).attr('data-reset-kind', event.kind).attr('fill', 'var(--ua-bg)').attr('stroke', colors[s.id]).attr('stroke-width', 1), key, s.id, true, 1);}
     const markerBuckets = new Map();
     for (const point of [...cycleEnds.values()].map(p => ({...p, ys: scale(p.s)})).concat(pointMarks)) {
       if (point.p.time < domain[0] || point.p.time > domain[1]) continue;
@@ -432,7 +436,7 @@
       if (!markerBuckets.has(key)) markerBuckets.set(key, []);
       markerBuckets.get(key).push({...point, px, py});
     }
-    for (const r of resets) if (r.time >= domain[0] && r.time <= domain[1]) g.append('line').attr('data-reset', `${r.id}-${r.w}`).attr('x1', x(r.time)).attr('x2', x(r.time)).attr('y1', top).attr('y2', bottom).attr('stroke', colors[r.id]).attr('stroke-dasharray', r.w === 'five' ? '3 4' : '9 5');
+    for (const r of resets) if (r.time >= domain[0] && r.time <= domain[1]) {const key = `${r.id}-${r.w}`; addTrace(g.append('line').attr('data-reset', key).attr('x1', x(r.time)).attr('x2', x(r.time)).attr('y1', top).attr('y2', bottom).attr('stroke', colors[r.id]).attr('stroke-dasharray', r.w === 'five' ? '3 4' : '9 5'), key, r.id, false, 1);}
     const predictions = model.forecastEnabled === false ? [] : visible.flatMap(id => ['five', 'week'].map(w => ({id, w, ...forecasts.present(model.data[id]?.forecast?.[w], model.now)}))).filter(p => p.state === 'predicted' && p.eta >= domain[0] && p.eta <= domain[1]);
     const forecastTrendMap = new Map(forecastTrends.map(s => [s.id + '-' + s.w, s]));
     const predictionY = p => {
@@ -440,16 +444,17 @@
       return curve ? scale(curve)(curve.points.at(-1).y) : Math.min(bottom - 6, top + 40 + (p.w === 'week' ? 14 : 0));
     };
     for (const s of forecastTrends) {
-      const ys = scale(s), a = s.points[0], b = s.points.at(-1);
-      if (s.range?.length > 1) {const points = [...s.range.map(p=>[x(p.time),ys(p.high)]), ...s.range.slice().reverse().map(p=>[x(p.time),ys(p.low)])]; g.append('path').datum(s.range).attr('data-forecast-range',s.id+'-'+s.w).attr('d','M'+points.map(p=>p.join(',')).join('L')+'Z').attr('fill',colors[s.id]).attr('opacity',.09).attr('stroke','none').attr('role','img').attr('aria-label',names[s.id]+' '+labels[s.w]+' 과거 예측 오차 범위. 신뢰구간이 아닙니다.');}
+      const ys = scale(s), a = s.points[0], b = s.points.at(-1), key = s.id + '-' + s.w;
+      if (s.range?.length > 1) {const points = [...s.range.map(p=>[x(p.time),ys(p.high)]), ...s.range.slice().reverse().map(p=>[x(p.time),ys(p.low)])]; addTrace(g.append('path').datum(s.range).attr('data-forecast-range',key).attr('d','M'+points.map(p=>p.join(',')).join('L')+'Z').attr('fill',colors[s.id]).attr('opacity',.09).attr('stroke','none').attr('role','img').attr('aria-label',names[s.id]+' '+labels[s.w]+' 과거 예측 오차 범위. 신뢰구간이 아닙니다.'), key, s.id, false, .09);}
 
-      g.append('path').datum(s).attr('data-forecast-trend', s.id + '-' + s.w).attr('data-start-time', a.time).attr('data-end-time', b.time).attr('data-start-value', a.y).attr('data-end-value', b.y).attr('data-end-kind', s.endKind).attr('d', d3.line().x(p => x(p.time)).y(p => ys(p.y))(s.points)).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', 1).attr('stroke-dasharray', s.w === 'week' ? '9 4 2 4' : '5 4').attr('opacity', .65).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('tabindex', 0).attr('role', 'img').attr('aria-label', names[s.id] + ' ' + labels[s.w] + ' 구독 사용량 예측. ' + (s.endKind === 'exhaustion' ? '100% 소진 예상 ' : '초기화 전 예상 ') + fmt(b.time));
-      if (s.endKind === 'reset' && b.time >= domain[0] && b.time <= domain[1]) marker(g, s.id, x(b.time), ys(b.y), 28).attr('data-forecast-boundary', s.id + '-' + s.w).attr('fill', 'var(--ua-bg)').attr('stroke', colors[s.id]).attr('stroke-width', 1);
+      addTrace(g.append('path').datum(s).attr('data-forecast-trend', key).attr('data-start-time', a.time).attr('data-end-time', b.time).attr('data-start-value', a.y).attr('data-end-value', b.y).attr('data-end-kind', s.endKind).attr('d', d3.line().x(p => x(p.time)).y(p => ys(p.y))(s.points)).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', 1).attr('stroke-dasharray', s.w === 'week' ? '9 4 2 4' : '5 4').attr('opacity', .65).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('tabindex', 0).attr('role', 'img').attr('aria-label', names[s.id] + ' ' + labels[s.w] + ' 구독 사용량 예측. ' + (s.endKind === 'exhaustion' ? '100% 소진 예상 ' : '초기화 전 예상 ') + fmt(b.time)), key, s.id, true, .65);
+      if (s.endKind === 'reset' && b.time >= domain[0] && b.time <= domain[1]) addTrace(marker(g, s.id, x(b.time), ys(b.y), 28).attr('data-forecast-boundary', key).attr('fill', 'var(--ua-bg)').attr('stroke', colors[s.id]).attr('stroke-width', 1), key, s.id, true, 1);
     }
     for (const p of predictions) {
-      const title = names[p.id] + ' / ' + labels[p.w] + ' / 100% 소진 예상 ' + fmt(p.eta);
-      g.append('line').attr('data-forecast', p.id + '-' + p.w).attr('data-time', p.eta).attr('x1', x(p.eta)).attr('x2', x(p.eta)).attr('y1', top).attr('y2', bottom).attr('stroke', colors[p.id]).attr('stroke-width', .8).attr('stroke-dasharray', '1 6').attr('opacity', .7);
-      marker(g, p.id, x(p.eta), predictionY(p), 28).datum(p).attr('data-forecast-marker', p.id + '-' + p.w).attr('fill', 'var(--ua-bg)').attr('stroke', colors[p.id]).attr('stroke-width', 1).attr('tabindex', 0).attr('role', 'img').attr('aria-label', title).append('title').text(title);
+      const title = names[p.id] + ' / ' + labels[p.w] + ' / 100% 소진 예상 ' + fmt(p.eta), key = p.id + '-' + p.w;
+      addTrace(g.append('line').attr('data-forecast', key).attr('data-time', p.eta).attr('x1', x(p.eta)).attr('x2', x(p.eta)).attr('y1', top).attr('y2', bottom).attr('stroke', colors[p.id]).attr('stroke-width', .8).attr('stroke-dasharray', '1 6').attr('opacity', .7), key, p.id, false, .7);
+      const fm = marker(g, p.id, x(p.eta), predictionY(p), 28).datum(p).attr('data-forecast-marker', key).attr('fill', 'var(--ua-bg)').attr('stroke', colors[p.id]).attr('stroke-width', 1).attr('tabindex', 0).attr('role', 'img').attr('aria-label', title);
+      addTrace(fm, key, p.id, true, 1); fm.append('title').text(title);
     }
     if (model.now >= domain[0] && model.now <= domain[1]) {g.append('line').attr('data-now', '').attr('x1', x(model.now)).attr('x2', x(model.now)).attr('y1', top).attr('y2', bottom).attr('stroke', 'var(--ua-focus)').attr('stroke-dasharray', '2 4'); text('현재', Math.max(left + 14, Math.min(right - 14, x(model.now))), state.credit && state.creditBasis === 'billing' && narrow ? Math.min(bottom - 8, top + 76) : units.length || state.credit && displayCreditMode() === 'estimate' ? top + 14 : top - 14, 'ua-inside-axis').attr('text-anchor', 'middle').attr('fill', 'var(--ua-focus)');}
     for (const [kind, ticks, length] of [['day', axis.dayTicks, 8], ['hour', axis.hourTicks, 4]]) {
@@ -470,9 +475,9 @@
     const guide = g.append('line').attr('y1', top).attr('y2', bottom).attr('stroke', 'var(--ua-muted)').attr('visibility', 'hidden');
     const selection = g.append('rect').attr('y', top).attr('height', bottom - top).attr('width', 0).attr('fill', 'var(--ua-text)').attr('opacity', .12);
     const hit = svg.append('rect').attr('data-chart-hit', '').attr('tabindex', 0).attr('role', 'application').attr('aria-label', '사용량 그래프. 중간 버튼 드래그 수평 이동, 우클릭 드래그 중앙 기준 핀치 확대 축소, Ctrl 휠 마우스 위치 기준 확대 축소, Shift 휠 수평 이동. 좌우 방향키 탐색, 더하기 빼기 확대 축소, Home 설정한 기본 기간').attr('x', left).attr('y', top).attr('width', right - left).attr('height', bottom - top).attr('fill', 'transparent').style('touch-action', 'pan-y');
-    let down = null, press = null, cursor = Math.min(model.now, domain[1]);
-    const clear = () => {hoverPosition = null; el('tooltip').hidden = true; delete el('tooltip').dataset.series; delete el('tooltip').dataset.detail; guide.attr('visibility', 'hidden'); emphasize(hoveredProvider);};
-    const tipLine = (text, active = false) => {const div = document.createElement('div'); div.textContent = text; if (active) div.className = 'ua-tip-active'; el('tooltip').append(div);};
+    let down = null, press = null, cursor = Math.min(model.now, domain[1]), tipRows = [];
+    const clear = () => {hoverPosition = null; lastTipKey = ''; el('tooltip').hidden = true; delete el('tooltip').dataset.series; delete el('tooltip').dataset.detail; guide.attr('visibility', 'hidden'); emphasize(hoveredProvider);};
+    const tipLine = (text, active = false) => {tipRows.push({text, active});};
     const traces = [...data.map(s => ({...s, ys: scale(s), value: p => p.y})), ...nativeData.map(s => ({...s, ys: scale(s), value: p => p.y})), ...interpolated];
     const near = (s, px, py, time) => {
       if (s.interpolated) {
@@ -495,11 +500,17 @@
       details?.open({provider: s.id, window: s.creditWindow || s.w, time, start: domain[0], end: domain[1]}, target);
     };
     // The hit layer keeps pointer gestures; rendered lines are separate keyboard targets.
-    const lineTargets = new Set();
+    const lineTargets = new Set(), traceMap = new Map();
+    for (const s of traces) {
+      const k = `${seriesKey(s)}|${Boolean(s.interpolated)}|${String(s.known)}`;
+      if (!traceMap.has(k)) traceMap.set(k, s);
+      const anyK = `${seriesKey(s)}|${Boolean(s.interpolated)}|*`;
+      if (!traceMap.has(anyK)) traceMap.set(anyK, s);
+    }
     svg.selectAll('[data-series], [data-interpolated]').each(function() {
       const key = this.dataset.series || this.dataset.interpolated;
       if (!details || lineTargets.has(key)) return;
-      const trace = traces.find(s => seriesKey(s) === key && Boolean(s.interpolated) === Boolean(this.dataset.interpolated) && (this.dataset.seriesKnown == null || String(s.known) === this.dataset.seriesKnown));
+      const trace = traceMap.get(`${key}|${Boolean(this.dataset.interpolated)}|${this.dataset.seriesKnown ?? '*'}`);
       if (!trace) return;
       const segments = trace.interpolated ? trace.bridges : [this.__data__ || []];
       const points = segments.find(segment => segment.length && segment[0].time <= Math.min(model.now, domain[1]) && segment.at(-1).time >= domain[0]);
@@ -576,7 +587,8 @@
         if (!previous || previous.s.interpolated && !match.s.interpolated) selectedBySeries.set(key, match);
       }
       const selected = [...selectedBySeries.values()];
-      el('tooltip').replaceChildren(); delete el('tooltip').dataset.series; delete el('tooltip').dataset.detail;
+      tipRows = [];
+      let tipSeries = null, tipDetail = null;
       tipLine(fmt(time));
       const eventHit = number(py) ? eventMarks.filter(e => Math.hypot(px - x(e.time), py - top - 12 - (e.w === 'week' ? 12 : 0)) <= 9 || e.kind === 'early-reset' && Math.abs(px - x(e.time)) < 4) : [];
       const pointHit = [];
@@ -591,23 +603,23 @@
       let activeSeries = null;
       if (eventHit.length) {
         activeSeries = eventHit[0].id + '-' + eventHit[0].w;
-        el('tooltip').dataset.series = 'event'; el('tooltip').dataset.detail = 'event';
+        tipSeries = 'event'; tipDetail = 'event';
         detailTips(eventHit.map(e => ({s: {id: e.id, w: e.w}, event: e})));
       } else if (pointHit.length) {
         activeSeries = seriesKey(pointHit[0].s);
-        el('tooltip').dataset.series = seriesKey(pointHit[0].s); el('tooltip').dataset.detail = 'marker';
+        tipSeries = seriesKey(pointHit[0].s); tipDetail = 'marker';
         const uniquePoints = new Map();
         for (const point of pointHit) if (!uniquePoints.has(seriesKey(point.s))) uniquePoints.set(seriesKey(point.s), point);
         detailTips(uniquePoints.values());
       } else if (forecastHit.length) {
         activeSeries = forecastHit[0].id + '-' + forecastHit[0].w;
-        el('tooltip').dataset.series = 'forecast'; el('tooltip').dataset.detail = 'forecast';
+        tipSeries = 'forecast'; tipDetail = 'forecast';
         const groups = new Map();
         for (const p of forecastHit) {const key = p.id + '-' + p.eta; if (!groups.has(key)) groups.set(key, {...p, windows: []}); groups.get(key).windows.push(labels[p.w]);}
         for (const p of groups.values()) tipLine(names[p.id] + ' / ' + p.windows.join('·') + ' / 100% 소진 예상 ≈' + fmt(p.eta), true);
       } else if (trendHits.length && (!selected.length || trendHits[0].distance <= matches[0].distance + .75)) {
         activeSeries = seriesKey(trendHits[0].s);
-        el('tooltip').dataset.series = 'forecast-trend'; el('tooltip').dataset.detail = 'forecast-trend';
+        tipSeries = 'forecast-trend'; tipDetail = 'forecast-trend';
         for (const {s, value} of trendHits.filter(p => p.distance <= trendHits[0].distance + .75)) {
           const unit = state.mode === 'total' && !s.known ? 'pp' : '%'; let range = '';
           const band = s.range || [];
@@ -615,19 +627,29 @@
           tipLine(names[s.id] + ' / ' + labels[s.w] + ' 구독 예측 / ≈' + round(value) + unit + range, true);
         }
       } else if (resetHit.length) {
-        el('tooltip').dataset.series = 'reset'; el('tooltip').dataset.detail = 'reset';
+        tipSeries = 'reset'; tipDetail = 'reset';
         const resetGroups = new Map();
         for (const r of resetHit) {const key = `${r.id}-${r.time}`; if (!resetGroups.has(key)) resetGroups.set(key, {id: r.id, time: r.time, windows: []}); resetGroups.get(key).windows.push(labels[r.w]);}
         for (const r of resetGroups.values()) tipLine(`${names[r.id]} / ${r.windows.join('·')} / 초기화 ${fmt(r.time)}`, true);
       } else if (selected.length) {
         activeSeries = seriesKey(selected[0].s);
-        el('tooltip').dataset.series = seriesKey(selected[0].s);
+        tipSeries = seriesKey(selected[0].s);
         for (const {s, p} of selected) seriesTip(s, s.w === 'credit' ? p.amount : s.interpolated ? p.value : s.value(p), s.interpolated || p.estimated, s.interpolated ? p.value : s.value(p));
       }
       emphasize(hoveredProvider, activeSeries);
-      el('tooltip').hidden = false; const tw = el('tooltip').offsetWidth, th = el('tooltip').offsetHeight;
-      el('tooltip').style.left = Math.max(4, Math.min(width - tw - 4, px + tw + 12 > width ? px - tw - 12 : px + 12)) + 'px';
-      el('tooltip').style.top = Math.max(top, Math.min(bottom - th, number(py) ? py + 12 : top + 12)) + 'px';
+      const tip = el('tooltip');
+      const tipKey = `${tipSeries || ''}\0${tipDetail || ''}\0${tipRows.map(r => (r.active ? '1' : '0') + r.text).join('\n')}`;
+      if (tipKey !== lastTipKey || tip.hidden) {
+        lastTipKey = tipKey;
+        if (tipSeries) tip.dataset.series = tipSeries; else delete tip.dataset.series;
+        if (tipDetail) tip.dataset.detail = tipDetail; else delete tip.dataset.detail;
+        tip.replaceChildren(...tipRows.map(r => {const div = document.createElement('div'); div.textContent = r.text; if (r.active) div.className = 'ua-tip-active'; return div;}));
+        tip.hidden = false;
+        tipW = tip.offsetWidth; tipH = tip.offsetHeight;
+      }
+      const tx = Math.max(4, Math.min(width - tipW - 4, px + tipW + 12 > width ? px - tipW - 12 : px + 12));
+      const ty = Math.max(top, Math.min(bottom - tipH, number(py) ? py + 12 : top + 12));
+      tip.style.transform = `translate3d(${tx}px,${ty}px,0)`;
     };
     svg.selectAll('[data-forecast-trend]').on('focus.forecast', function() {
       const s = this.__data__, time = (Math.max(domain[0], s.points[0].time) + Math.min(domain[1], s.points.at(-1).time)) / 2;
@@ -635,22 +657,23 @@
       show(x(time), scale(s)(gaps.at([s.points[index - 1], s.points[index]], 'y', time)));
     }).on('blur.forecast', clear).on('keydown.forecast', event => {if (event.key === 'Escape') clear();});
     svg.selectAll('[data-forecast-marker]').on('focus.forecast', function() {const p = this.__data__; show(x(p.eta), predictionY(p));}).on('blur.forecast', clear).on('keydown.forecast', event => {if (event.key === 'Escape') clear();});
-    const px = e => Math.max(left, Math.min(right, d3.pointer(e, svg.node())[0]));
+    const pt = e => {const [rx, ry] = d3.pointer(e, svg.node()); return [Math.max(left, Math.min(right, rx)), ry];};
     hit.on('pointerdown', function(e) {
       if (e.button !== 0 || chartDrag) {if (e.button === 1 || e.button === 2) clear(); return;}
       if (press) return;
-      down = px(e); press = {id: e.pointerId, x: e.clientX, y: e.clientY, movement: 0}; this.setPointerCapture(e.pointerId); show(down, d3.pointer(e, svg.node())[1]);
+      const [p, py] = pt(e);
+      down = p; press = {id: e.pointerId, x: e.clientX, y: e.clientY, movement: 0}; this.setPointerCapture(e.pointerId); show(down, py);
     });
     hit.on('pointermove', e => {
       if (chartDrag) return;
       hoverPosition = {x: e.clientX, y: e.clientY};
-      const p = px(e); show(p, d3.pointer(e, svg.node())[1]);
+      const [p, py] = pt(e); show(p, py);
       if (press && e.pointerId === press.id) press.movement = Math.max(press.movement, Math.hypot(e.clientX - press.x, e.clientY - press.y));
       if (down !== null) selection.attr('x', Math.min(p, down)).attr('width', Math.abs(p - down));
     });
     hit.on('pointerup', e => {
       if (!press || e.pointerId !== press.id || e.button !== 0) return;
-      const p = px(e), py = d3.pointer(e, svg.node())[1], movement = Math.max(press.movement, Math.hypot(e.clientX - press.x, e.clientY - press.y));
+      const [p, py] = pt(e), movement = Math.max(press.movement, Math.hypot(e.clientX - press.x, e.clientY - press.y));
       if (down !== null && Math.abs(p - down) > 12) setRange([x.invert(Math.min(p, down)), x.invert(Math.max(p, down))]);
       else if (movement <= 6 && !chartDrag) {
         const match = traces.map(s => near(s, p, py, x.invert(p))).filter(value => value && value.distance <= 8).sort((a, b) => a.distance - b.distance)[0];
@@ -679,15 +702,16 @@
     });
     const note = `${fmt(domain[0])} – ${fmt(domain[1])}`;
     el('range').textContent = note; el('range').title = note; el('range').setAttribute('aria-label', note);
-    svg.selectAll('[data-inside-axis]').raise(); traceIndex = null; emphasizedTarget = null; emphasize(hoveredProvider);
+    svg.selectAll('[data-inside-axis]').raise(); emphasizedTarget = null;
     if (previousHover && !chartDrag && !gesture) {
-      // 방금 만든 SVG의 레이아웃을 강제하지 않도록 그리기 시작 때 읽어 둔 상자로 계산하고, 툴팁 복원은 다음 프레임에 한다.
+      // 방금 만든 SVG의 레이아웃을 강제하지 않도록 그리기 시작 때 읽어 둔 상자로 계산하고, 강조는 첫 페인트 전에 동기 복원해 재페이드 깜빡임을 막는다.
       const px = (previousHover.x - chartBox.left) * width / chartBox.width, py = (previousHover.y - chartBox.top) * height / Math.max(chartBox.height, 1);
       if (px >= left && px <= right && py >= top && py <= bottom) {
+        emphasize(hoveredProvider, lastEmphasizedSeries);
         hoverPosition = previousHover; const seq = ++drawSeq;
         requestAnimationFrame(() => {if (seq === drawSeq && hoverPosition === previousHover) show(px, py);});
-      } else hoverPosition = null;
-    }
+      } else {hoverPosition = null; emphasize(hoveredProvider);}
+    } else emphasize(hoveredProvider);
     if (focusedForecastTrend) (svg.node().querySelector('[data-forecast-trend="' + focusedForecastTrend + '"]') || hit.node()).focus({preventScroll: true});
     else if (focusedForecast) svg.node().querySelector('[data-forecast-marker="' + focusedForecast + '"]')?.focus({preventScroll: true});
     else if (chartFocused) hit.node().focus({preventScroll: true});

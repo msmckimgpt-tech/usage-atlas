@@ -82,24 +82,44 @@
     }
     return found.concat(gaps.visible(bridges, field, domain));
   }
+  function maxInView(points, bridges, domain, field = 'y') {
+    let best = -Infinity;
+    const lo = lowerBound(points, domain[0]), hi = upperBound(points, domain[1], lo);
+    for (let i = lo; i < hi; i++) {const v = points[i][field]; if (number(v) && v > best) best = v;}
+    for (const edge of domain) {
+      const i = lowerBound(points, edge), a = points[i - 1], b = points[i];
+      if (a && b && b.continuous && number(a[field]) && number(b[field]) && a.time < edge && edge < b.time) {
+        const v = gaps.at([a, b], field, edge); if (v > best) best = v;
+      }
+    }
+    for (const v of gaps.visible(bridges, field, domain)) if (v > best) best = v;
+    return best;
+  }
   function limits(plotted, domain, {mode = 'usage', basis = 'current', refs: showRefs = false} = {}) {
-    const active = plotted.filter(s => s.points.some(p => number(p.y)));
+    const active = plotted.filter(s => s.hasData ?? s.points.some(p => number(p.y)));
     const rawTotal = mode === 'total' && active.length > 0 && active.every(s => !s.known);
     const split = basis === 'base' || mode === 'total' && !rawTotal && active.some(s => !s.known);
     const refs = mode === 'delta' ? [] : basis === 'base' ? (showRefs ? [100, 500, 2000] : [100, 500]) : rawTotal ? [] : [100];
-    const visible = s => values(s.points, s.bridges || gaps.bridges(s.points, 'y'), domain);
-    const scaled = plotted.filter(s => !split || s.known).flatMap(visible);
-    const unscaled = plotted.filter(s => split && !s.known).flatMap(visible);
-    const yMax = Math.max(1, ...refs, ...scaled);
-    const referenceZoom = basis === 'base' && showRefs && mode !== 'delta' ? yMax / Math.max(500, ...scaled) : 1;
-    const rawMax = Math.max(mode === 'delta' ? 1 : 100, ...unscaled) * referenceZoom;
+    let scaledMax = -Infinity, unscaledMax = -Infinity;
+    for (const s of plotted) {
+      const m = maxInView(s.points, s.bridges || gaps.bridges(s.points, 'y'), domain);
+      if (!split || s.known) {if (m > scaledMax) scaledMax = m;}
+      else if (m > unscaledMax) unscaledMax = m;
+    }
+    const yMax = Math.max(1, ...refs, scaledMax);
+    const referenceZoom = basis === 'base' && showRefs && mode !== 'delta' ? yMax / Math.max(500, scaledMax) : 1;
+    const rawMax = Math.max(mode === 'delta' ? 1 : 100, unscaledMax) * referenceZoom;
     // 현재 한도의 누적 %와 미환산 pp는 단위를 보존하고 같은 숫자 간격으로 비교한다.
     const sharedTotal = mode === 'total' && basis === 'current' && split;
     const maximum = (sharedTotal ? Math.max(yMax, rawMax) : yMax) * 1.08;
     return {rawTotal, split, refs, maximum, unscaledMaximum: sharedTotal ? maximum : rawMax * 1.08};
   }
   function billingMaximum(series, domain, mode = 'usage') {
-    const maximum = Math.max(0, ...series.filter(item => item.billing).flatMap(item => values(item.points, item.bridges || gaps.bridges(item.points, 'y'), domain)));
+    let maximum = 0;
+    for (const item of series) if (item.billing) {
+      const m = maxInView(item.points, item.bridges || gaps.bridges(item.points, 'y'), domain);
+      if (m > maximum) maximum = m;
+    }
     return (mode === 'delta' ? maximum > 0 ? Math.max(.000001, maximum) : 1 : Math.max(100, maximum)) * 1.08;
   }
   // 보이는 시간 범위만 잘라 픽셀 열마다 첫·마지막·최소·최대 점(M4)만 남긴다. 래스터 결과는 전체 점과 같고 점 수는 폭에 비례한다.

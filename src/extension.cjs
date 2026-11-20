@@ -131,7 +131,13 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   const latest = id => records.findLast(s => id === 'antigravity' ? providerCatalog.isAntigravity(s.provider) : s.provider === id);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 10);
   let hoverCache;
+  // 백그라운드 창은 상태 표시줄 툴팁을 만들 필요가 없다. 창이 5개일 때 모든 확장 호스트가 전체 기록 투영을 반복해 reload가 느려지므로, 포커스를 되찾거나 마우스가 올라와 활성화될 때 한 번만 갱신한다.
+  // focused만 보면 포커스 없는 창의 상태 표시줄에 마우스를 올렸을 때 툴팁이 비거나 낡은 채로 남는다. active는 포커스 없이도 마우스 활동으로 켜진다.
+  const unfocused = () => vscode.window.state?.focused === false && vscode.window.state?.active !== true;
+  let statusStale = false;
   function updateStatus() {
+    if (unfocused()) {statusStale = true; return;}
+    statusStale = false;
     const key = {records, metadata, visibility: JSON.stringify(displayConfig()), projection: projected(), forecastEnabled: cfg().get('forecastEnabled', true), creditBasis: cfg().get('creditBasis', 'subscription'), colorMode: cfg().get('colorMode', 'system'), minute: Math.floor(Date.now() / 60000), theme: vscode.window.activeColorTheme.kind, interval: maxIntervalSeconds(), enabled: cfg().get('enabled'), trusted: vscode.workspace.isTrusted, codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), antigravitySmoothingMinutes: chartGraphs.smoothing(cfg().get('antigravitySmoothingMinutes', 5))};
     if (hoverCache && Object.keys(key).every(k => key[k] === hoverCache[k])) return;
     const message = !key.enabled ? '수집 중지' : !key.trusted ? '작업 영역 신뢰 필요' : null;
@@ -292,7 +298,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         metadata.analysisOwnerPid = process.pid;
         metadata.analysisActivity = Object.fromEntries(['codex', 'claude'].map(id => [id, {active: analysisData.activity?.[id]?.active === true, lastActivity: Number.isFinite(analysisData.activity?.[id]?.lastActivity) ? analysisData.activity[id].lastActivity : null, complete: analysisData.coverage?.[id]?.partial !== true && analysisData.coverage?.[id]?.cacheWriteFailed !== true}]));
         await saveMeta();
-        if (cfg().get('forecastEnabled', true) && forecastConfig().patternDays > 0) {projected(); await patternBook.save().catch(() => {});}
+        if (!unfocused() && cfg().get('forecastEnabled', true) && forecastConfig().patternDays > 0) {projected(); await patternBook.save().catch(() => {});}
         await diagnostics.save().catch(() => {});
         return changed;
       });
@@ -302,7 +308,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   }
   async function maintainForecast() {
     if (forecastRunning) return forecastRunning;
-    if (disposed || !vscode.workspace.isTrusted || !cfg().get('enabled') || !cfg().get('forecastEnabled', true) || !forecastConfig().patternDays) return;
+    if (disposed || unfocused() || !vscode.workspace.isTrusted || !cfg().get('enabled') || !cfg().get('forecastEnabled', true) || !forecastConfig().patternDays) return;
     forecastRunning = (async () => {
       await refreshStored(); projected(); const input = forecastInput;
       if (!input || !Object.values(input.providers).some(provider => Object.values(provider.windows).some(window => window.data.byteLength > 0))) return;
@@ -571,7 +577,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   for (const [name, fn] of Object.entries(commands)) context.subscriptions.push(vscode.commands.registerCommand(`usageAtlas.${name}`, fn));
   context.subscriptions.push(vscode.window.registerUriHandler({handleUri: uri => uri.path === '/open' ? open() : undefined}));
   status.name = 'Usage Atlas'; status.text = '$(graph-line) Usage'; status.command = 'usageAtlas.open'; updateStatus(); status.show();
-  context.subscriptions.push(status, output, vscode.window.onDidChangeActiveColorTheme(() => publish()), vscode.workspace.onDidChangeConfiguration(async e => {if (e.affectsConfiguration('usageAtlas')) {if (['antigravityDataDir', 'antigravityEnabled'].some(key => e.affectsConfiguration('usageAtlas.' + key))) {await detectAntigravity(); antigravity.dispose(); projectionCache = null; const old = metadata.collectors.antigravity; if (old && !old.errors) old.next = Date.now();}if (['intervalSeconds', 'adaptiveCollection', 'idleIntervalMultiplier', 'analysisEnabled'].some(key => e.affectsConfiguration(`usageAtlas.${key}`))) intervalChanged = true; diagnostics.setEnabled(cfg().get('diagnosticsEnabled', true)); if (e.affectsConfiguration('usageAtlas.codexConnectionMode')) adapters.dispose(); schedule(0); publish();}}));
+  context.subscriptions.push(status, output, vscode.window.onDidChangeActiveColorTheme(() => publish()), vscode.window.onDidChangeWindowState(e => {if ((e.focused || e.active) && statusStale) publish().catch(err => output.appendLine(err.message));}), vscode.workspace.onDidChangeConfiguration(async e => {if (e.affectsConfiguration('usageAtlas')) {if (['antigravityDataDir', 'antigravityEnabled'].some(key => e.affectsConfiguration('usageAtlas.' + key))) {await detectAntigravity(); antigravity.dispose(); projectionCache = null; const old = metadata.collectors.antigravity; if (old && !old.errors) old.next = Date.now();}if (['intervalSeconds', 'adaptiveCollection', 'idleIntervalMultiplier', 'analysisEnabled'].some(key => e.affectsConfiguration(`usageAtlas.${key}`))) intervalChanged = true; diagnostics.setEnabled(cfg().get('diagnosticsEnabled', true)); if (e.affectsConfiguration('usageAtlas.codexConnectionMode')) adapters.dispose(); schedule(0); publish();}}));
   // 한 창만 수집, 다른 창은 동일 저장소의 결과를 읽는다. UI는 숨기면 해제된다.
   const tick = async version => {try {await collect();} finally {if (!disposed && version === timerVersion) {updateStatus(); schedule(wakeDelay(metadata.collectors, Date.now(), cfg().get('enabled') && vscode.workspace.isTrusted, collectorIds()));}}};
   function schedule(delay) {clearTimeout(timer); const version = ++timerVersion; timer = setTimeout(() => tick(version).catch(e => {if (!disposed) output.appendLine(e.message);}), delay);}

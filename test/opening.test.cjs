@@ -31,7 +31,7 @@ async function harness(t, options = {}) {
     , commands: {registerCommand: (name, fn) => {commands.set(name, fn); return disposable();}, executeCommand: async () => {}}
     , window: {
       activeColorTheme: {kind: 2}, createOutputChannel: () => ({appendLine() {}, dispose() {}}), createStatusBarItem: () => ({show() {}, dispose() {}})
-      , registerUriHandler: disposable, onDidChangeActiveColorTheme: disposable
+      , registerUriHandler: disposable, onDidChangeActiveColorTheme: disposable, onDidChangeWindowState: disposable
       , createWebviewPanel: () => {
         const panel = {visible: true, messages: [], reveal() {this.visible = true; this.view();}, dispose() {this.disposed();}, onDidDispose(fn) {this.disposed = fn;}, onDidChangeViewState(fn) {this.view = fn;}};
         panel.webview = {cspSource: 'test-resource:', asWebviewUri: uri => uri, onDidReceiveMessage(fn) {panel.receive = fn;}, postMessage: async m => {panel.messages.push(m); return true;}};

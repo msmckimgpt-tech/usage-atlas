@@ -5,7 +5,13 @@
 })(globalThis, (creditGraphs, gaps) => {
   const number = n => typeof n === 'number' && Number.isFinite(n);
   const antigravity = id => typeof id === 'string' && /^antigravity-[a-f\d]{16}$/.test(id);
+  // 초기화 시각 직후(수 초~수 분) 수집이 같은 초기화 시각의 이전 주기 값을 돌려주면 주기의 마지막 관측으로 잇는다.
+  const resetGrace = 300000;
+  const resetEvent = p => p?.event?.kind === 'scheduled-reset' || p?.event?.kind === 'early-reset';
+  const cycleTail = (a, b) => !!(a && b && number(a.value) && number(b.value) && b.value >= a.value && b.time > a.time && b.totalContinuous !== false && !resetEvent(b)
+    && a.plan === b.plan && a.mult === b.mult && number(a.reset) && number(b.reset) && Math.abs(a.reset - b.reset) <= 60000 && b.time >= Math.min(a.reset, b.reset) && b.time < Math.min(a.reset, b.reset) + resetGrace);
   const smoothing = value => number(value) && value >= 0 && value <= 60 ? value : 5;
+  // 수집 공백 판단은 core의 totalContinuous(설정한 최대 수집 간격 기준)를 따른다. 30분 고정값은 유휴 수집(최대 20분 x3)을 끊었다.
   function stabilize(input, minutes = 5) {
     const width = smoothing(minutes) * 60000;
     if (!width || !input.length || input.some(p => p.displayCycle == null)) return input;
@@ -14,7 +20,7 @@
       const valid = number(p.value), sameCycle = previous && p.displayCycle != null && p.displayCycle === previous.displayCycle && p.plan === previous.plan && p.mult === previous.mult;
       const correction = previous && valid && number(previous.value) && previous.value - p.value > 1;
       if (previous && (!sameCycle || correction)) context++;
-      const continuous = sameCycle && !correction && number(previous.value) && valid && p.totalContinuous !== false && p.time > previous.time && p.time - previous.time <= 1800000 && p.time < Math.min(p.reset, previous.reset);
+      const continuous = sameCycle && !correction && number(previous.value) && valid && (p.totalContinuous === undefined ? p.time - previous.time <= 1800000 : p.totalContinuous) && p.time > previous.time && p.time < Math.min(p.reset, previous.reset) + resetGrace;
       p.displayContext = 'stable/' + context;
       p.displayContinuous = !!continuous;
       p.displayEstimated = !!(continuous && !p.continuous);
@@ -53,14 +59,14 @@
     const raw = provider?.windows?.[w] || [], input = antigravity(id) && mode === 'usage' ? stabilize(raw, antigravitySmoothingMinutes) : raw, currentMult = input.at(-1)?.mult;
     const known = number(currentMult) && (mode !== 'total' || input.at(-1)?.cumulativeKnown !== false);
     const estimateCredit = credit && creditMode === 'estimate' && (provider?.ledgerAvailable ?? number(provider?.last?.spentUsd));
-    const points = input.map(p => {
+    const points = input.map((p, i) => {
       const calibrated = mode === 'total' ? known : number(p.mult);
       const factor = basis === 'base' && calibrated ? p.mult : 1;
       let y = p.value === null ? null : mode === 'usage' ? p.value * factor : mode === 'delta' ? (p.delta === null ? null : p.delta * factor) : (known ? p.cumulative / (basis === 'base' ? 1 : currentMult) : p.nativeCumulative);
       let estimated = false;
       const extra = creditGraphs.value(p, mode, mode === 'total' && !known ? 'current' : basis, currentMult);
       if (number(y) && estimateCredit) {if (number(extra.y)) {y += extra.y; estimated = true;} else y = null;}
-      const continuous = mode === 'total' ? p.totalContinuous ?? p.continuous : p.displayContinuous ?? p.continuous;
+      const continuous = mode === 'total' ? p.totalContinuous ?? p.continuous : p.displayContinuous ?? (p.continuous || mode === 'usage' && cycleTail(input[i - 1], p));
       const segment = mode === 'total' ? p.cumulativeSegment ?? p.segment : p.displayContext ?? p.segment;
       const creditSegment = mode === 'total' ? p.credit?.cumulativeSegment ?? p.credit?.segment : p.credit?.segment;
       const gapContext = segment == null || estimated && creditSegment == null ? null : segment + '/' + (estimated ? creditSegment : '');

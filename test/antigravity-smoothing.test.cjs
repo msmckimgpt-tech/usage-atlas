@@ -56,8 +56,13 @@ test('missing data and long gaps stay outside the smoothing window and retain se
   assert.equal(stable[1].value, points[1].value); assert.equal(stable[3].value, points[3].value);
   const provider = {windows: {week: points}}, line = chart.quota(provider, id, 'week')[0];
   assert.equal(require('../media/gaps.js').bridges(line.points, 'y').length, 1);
-  const long = [{...points[0]}, {...points[1], time: points[0].time + 3600000}];
+  // 수집 공백 판단은 core가 설정한 최대 간격으로 계산한 totalContinuous를 따른다.
+  const long = [{...points[0]}, {...points[1], time: points[0].time + 3600000, totalContinuous: false}];
   assert.equal(chart.stabilize(long)[1].displayContinuous, false);
+  const idle = [{...points[0]}, {...points[1], time: points[0].time + 37 * minute, totalContinuous: true}];
+  assert.equal(chart.stabilize(idle)[1].displayContinuous, true);
+  const legacy = [{...points[0]}, {...points[1], time: points[0].time + 3600000, totalContinuous: undefined}];
+  assert.equal(chart.stabilize(legacy)[1].displayContinuous, false);
 });
 test('returning to an account cannot smooth across the other account interval', () => {
   const source = records(); source[60] = {...source[60], account: hash('other-account')};

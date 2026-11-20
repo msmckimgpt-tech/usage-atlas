@@ -242,11 +242,32 @@
     for (const row of records) if (row.provider === id && row.account !== account && row.time <= through && (since === null || row.time > since)) since = row.time;
     return since;
   }
+  // Antigravity는 같은 주기 안에서도 사용률이 1%p 미만으로 오르내린다. 이 흔들림을 회복·결측으로 보면
+  // 예측이 recovery/insufficient로 멈추므로, 예측 입력에서만 주기 내 최고값으로 눌러 소비 구간을 잇는다.
+  // 허용폭을 넘는 감소, 초기화, 요금제·배율 변경, 수집 공백(totalContinuous=false)은 그대로 둔다.
+  function denoise(points, tolerance = 1) {
+    if (!Array.isArray(points) || !points.length || !finite(tolerance) || tolerance <= 0) return points || [];
+    const clean = p => {delete p.recoveryExcluded; delete p.recoveryPeak; if (p.event?.kind === 'decrease') delete p.event; return p;};
+    let previous = null, peak = null;
+    return points.map(p => {
+      if (!finite(p.value)) {previous = null; peak = null; return p;}
+      const sameCycle = previous && !resetEvent(p) && p.totalContinuous !== false && p.plan === previous.plan && p.mult === previous.mult && finite(p.reset) && finite(previous.reset) && Math.abs(p.reset - previous.reset) <= minute && p.time > previous.time && p.time < previous.reset;
+      if (!sameCycle || p.value >= peak) {
+        const out = sameCycle && (!p.continuous || p.recoveryExcluded > 0) ? clean({...p, continuous: true, delta: p.value - previous.value}) : p;
+        previous = out; peak = p.value; return out;
+      }
+      if (peak - p.value > tolerance) {previous = p; peak = p.value; return p;}
+      const out = clean({...p, value: peak, rawValue: p.value, delta: 0, continuous: true});
+      previous = out; return out;
+    });
+  }
   function provider(windows, options = {}) {
     const shared = {...options, slots: new Map()};
     return Object.fromEntries(['five', 'week'].map(window => {
-      const learned = options.learning?.[window];
-      const value = estimate(windows[window] || [], window, {...shared, method: learned?.method, archiveCells: options.archiveCells?.[window]});
+      const learned = options.learning?.[window], points = windows[window] || [], last = points.at(-1);
+      const value = estimate(points, window, {...shared, method: learned?.method, archiveCells: options.archiveCells?.[window]});
+      // 흔들림을 누른 마지막 값과 화면의 원래 관측값을 구분해, 예상선이 실제 마지막 관측점에서 시작하게 한다.
+      if (finite(last?.rawValue) && value.observedAt === last.time) value.observedValue = last.rawValue;
       return [window, learned ? {...value, calibration: {method: learned.method, samples: learned.samples, origins: learned.origins, dates: learned.dates, errors: learned.errors}} : value];
     }));
   }
@@ -280,7 +301,7 @@
   function curve(value, last, {mode = 'usage', basis = 'current'} = {}, now) {
     const status = present(value, now);
     // 소비가 없는 inactive도 미리보기가 초기화 시점 사용량을 표시하므로 같은 값을 잇는 수평 예상선을 그린다.
-    if (!['predicted', 'reset-first', 'inactive'].includes(status.state) || mode === 'delta' || !last || last.time !== value.observedAt || last.value !== value.used || last.reset !== value.reset || !value.trajectory && (!finite(value.ratePerHour) || value.ratePerHour < 0 || value.ratePerHour === 0 && status.state !== 'inactive')) return null;
+    if (!['predicted', 'reset-first', 'inactive'].includes(status.state) || mode === 'delta' || !last || last.time !== value.observedAt || last.value !== (finite(value.observedValue) ? value.observedValue : value.used) || last.reset !== value.reset || !value.trajectory && (!finite(value.ratePerHour) || value.ratePerHour < 0 || value.ratePerHour === 0 && status.state !== 'inactive')) return null;
     const end = status.state === 'predicted' ? value.eta : value.reset;
     const rawEnd = status.state === 'predicted' ? 100 : atReset(value);
     const calibrated = finite(last.mult) && last.mult > 0, known = calibrated && (mode !== 'total' || last.cumulativeKnown !== false);
@@ -288,7 +309,7 @@
     const start = mode === 'total' ? known ? last.cumulative / (basis === 'base' ? 1 : last.mult) : last.nativeCumulative : last.value * factor;
     const finish = mode === 'total' ? start + (rawEnd - value.used) * factor : rawEnd * factor;
     if (!finite(rawEnd) || !finite(start) || !finite(finish) || end <= value.observedAt) return null;
-    const raw = value.trajectory || [{time: value.observedAt, value: value.used}, {time: end, value: rawEnd}];
+    const raw = (value.trajectory || [{time: value.observedAt, value: value.used}, {time: end, value: rawEnd}]).map((p, i) => i === 0 && finite(value.observedValue) && p.time === value.observedAt ? {...p, value: Math.min(p.value, value.observedValue)} : p);
     if (raw.some((p, i) => !finite(p.time) || !finite(p.value) || p.value < 0 || p.value > 100 || i > 0 && (p.time <= raw[i - 1].time || p.value < raw[i - 1].value))) return null;
     const project = p => mode === 'total' ? start + (p - value.used) * factor : p * factor;
     const errors = (value.calibration?.errors || []).filter(p => finite(p.hours) && p.hours > 0 && p.samples >= 8 && p.dates >= 3 && finite(p.low) && p.low <= 0 && finite(p.high) && p.high >= 0).sort((a, b) => a.hours - b.hours);
@@ -309,5 +330,5 @@
     }
     return {known, endKind: status.state === 'predicted' ? 'exhaustion' : 'reset', range, points: raw.map((p, i) => ({...p, y: project(p.value), continuous: i > 0, estimated: true}))};
   }
-  return {revision: 2, settings, estimate, accountStart, provider, present, remaining, summary, curve};
+  return {revision: 3, settings, estimate, accountStart, denoise, provider, present, remaining, summary, curve};
 });

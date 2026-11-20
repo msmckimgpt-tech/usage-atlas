@@ -83,6 +83,9 @@ function windowTransitions(list, key, carry) {
   return out;
 }
 const isReset = event => event?.kind === 'scheduled-reset' || event?.kind === 'early-reset';
+// Antigravity 요금제 ID별 기본 요금제(Pro) 대비 배율. 사용자가 입력한 배율이 없을 때만 쓴다.
+const antigravityPlanMultipliers = {'g1-pro-tier': 1, 'g1-ultra-lite-tier': 5};
+const defaultMultiplier = (provider, plan) => catalog.isAntigravity(provider) ? antigravityPlanMultipliers[plan] ?? null : null;
 function quotaSeries(list, key, capacities, maxGap, transitions = windowTransitions(list, key), displayBreaks, carry) {
   const {provider, account} = list.at(-1) || {};
   const byPlan = new Map(), positions = new Map();
@@ -101,7 +104,7 @@ function quotaSeries(list, key, capacities, maxGap, transitions = windowTransiti
     positions.set(s.plan, position);
     // 최초 입력 배율은 같은 계정·요금제·창의 과거 기록에도 적용한다.
     const cap = caps[position] || caps[0];
-    const mult = cap?.mult ?? null;
+    const mult = cap?.mult ?? defaultMultiplier(provider, s.plan);
     if (watermark && (watermark.plan !== s.plan || watermark.mult !== mult)) watermark = undefined;
     // 초기화·요금제 변경·감소·수집 공백은 소비량으로 추정하지 않는다.
     const valid = prev && w && prev.w && Math.abs(w.reset - prev.w.reset) <= 60000 && s.time < prev.w.reset && s.time - prev.time <= maxGap && s.plan === prev.plan && mult === prev.mult && w.used >= prev.w.used;

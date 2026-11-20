@@ -30,6 +30,17 @@ test('first capacity calibrates same-plan history, separately for each window', 
   const p = series(r, 'codex', 'five', c);
   assert.deepEqual(p.map(x => x.mult), [5, 5, 5]); assert.equal(p[1].delta, 5); assert.equal(p[2].delta, 5); assert.equal(p[2].cumulative, 50);
 });
+test('Antigravity plan tiers carry a default multiplier; entered capacity wins; unknown tiers stay uncalibrated', () => {
+  const provider = 'antigravity-' + 'a'.repeat(16), reset = time + 3600000;
+  const row = (used, at, plan) => ({...sample(used, at, reset), provider, plan});
+  const records = [row(10, time, 'g1-pro-tier'), row(20, time + 100000, 'g1-pro-tier'), row(5, time + 200000, 'g1-ultra-lite-tier'), row(15, time + 300000, 'g1-ultra-lite-tier')];
+  const p = series(records, provider, 'five');
+  assert.deepEqual(p.map(x => x.mult), [1, 1, 5, 5]); assert.equal(p[3].delta, 10);
+  assert.equal(series([row(1, time, 'g1-other')], provider, 'five')[0].mult, null);
+  const c = [{provider, account: hash('a'), plan: 'g1-ultra-lite-tier', window: 'five', mult: 4, time}];
+  assert.deepEqual(series(records, provider, 'five', c).map(x => x.mult), [1, 1, 4, 4]);
+  assert.equal(series(records.map(r => ({...r, provider: 'codex'})), 'codex', 'five')[2].mult, null);
+});
 test('later calibration recalculates historical cumulative with the entered multiplier', () => {
   const r = [sample(49, time), sample(60, time + 100000), sample(82, time + 200000), sample(82, time + 300000), sample(84, time + 400000)];
   const c = [{provider: 'codex', account: hash('a'), plan: 'one', window: 'five', mult: 5, time: time + 300000}];

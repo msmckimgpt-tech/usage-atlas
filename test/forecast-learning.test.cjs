@@ -47,7 +47,7 @@ test('calendar/activity forecasts learn work persistence and observed rest rathe
   assert.equal(forecast.estimate(points, 'five', {patternDays: 0, method: 'activity'}).pattern, undefined);
 });
 test('learned methods require separate chronological validation and residual bands require sufficient observed dates', () => {
-  const points = fixture.points(now), model = learning.calibrate(points, 'five', forecast.settings());
+  const points = fixture.points(), model = learning.calibrate(points, 'five', forecast.settings());
   assert.equal(model.method, 'seasonal'); assert.equal(model.validated, false); assert.equal(model.errors.length, 0);
   assert.ok(model.evaluatedThrough <= points.at(-1).time);
   const packed = learning.pack(points), restored = learning.unpack(packed);

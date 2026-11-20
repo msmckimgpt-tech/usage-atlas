@@ -20,7 +20,7 @@
   function ids(records = []) {
     let last;
     for (const row of records) if (isAntigravity(row.provider) && (!last || row.time >= last.time)) last = row;
-    const groups = [...new Set(records.filter(row => isAntigravity(row.provider) && row.account === last?.account && row.time === last?.time).map(row => row.provider))].sort().slice(0, 16);
+    const groups = [...new Set(records.filter(row => isAntigravity(row.provider) && row.account === last?.account).map(row => row.provider))].sort().slice(0, 16);
     return ['codex', 'claude', ...groups];
   }
   function name(id, label) {return id === 'codex' ? 'Codex' : id === 'claude' ? 'Claude Code' : 'Antigravity' + (label ? ' · ' + label : '');}

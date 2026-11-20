@@ -56,9 +56,12 @@ test('new group snapshots round trip without secrets, isolate accounts and prese
   assert.equal(report.summary.callCount, null); assert.equal(report.quotaOnly, true); assert.equal(report.observations.items[0].used, 25); assert.ok(report.coverage.notes.some(n => n.includes('Antigravity')));
   const scope = selection({provider: id, window: 'five', requestId: 'x', time: now, start: now - 120000, end: now + 1}, restored, 90, now);
   assert.equal(scope.account, account.account);
-  const next = ag.snapshots(summary(), {account: hash('different'), plan: account.plan}, now + 1).slice(0, 1);
-  assert.deepEqual(catalog.ids([...restored, ...next]), ['codex', 'claude', id]);
-  assert.equal(project([...restored, ...next])[id].windows.five.length, 1);
+  const partial = ag.snapshots(summary(), account, now + 1).slice(0, 2);
+  assert.deepEqual(catalog.ids([...restored, ...partial]), ['codex', 'claude', ...first.map(s => s.provider).sort()]);
+  assert.equal(project([...restored, ...partial])[first[2].provider].last.label, 'Argon');
+  const next = ag.snapshots(summary(), {account: hash('different'), plan: account.plan}, now + 2).slice(0, 1);
+  assert.deepEqual(catalog.ids([...restored, ...partial, ...next]), ['codex', 'claude', id]);
+  assert.equal(project([...restored, ...partial, ...next])[id].windows.five.length, 1);
   assert.throws(() => sanitize({...first[0], provider: 'antigravity-<script>'}));
 });
 test('collection is cached, read-only, account guarded and does not retain private response data', async () => {

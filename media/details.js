@@ -151,8 +151,13 @@
       return Number.isFinite(day) && new Date(day).toISOString().slice(0, 10) === value ? value : '-';
     }
     const time = finite(value) ? value : typeof value === 'string' ? Date.parse(value) : NaN;
-    return Number.isFinite(time) ? new Date(time).toLocaleString('ko-KR', {hour12: false}) : '-';
+    if (!Number.isFinite(time)) return '-';
+    const at = new Date(time), pad = value => String(value).padStart(2, '0');
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
   };
+  const percent = value => finite(value) ? (value * 100).toLocaleString('ko-KR', {maximumFractionDigits: 1}) + '%' : '-';
+  const windowNames = {five: '5시간', week: '주간', credit: '크레딧'};
+  const markerClass = id => 'ua-dot ua-dot-' + (['codex', 'claude'].includes(id) ? id : 'antigravity');
   const items = section => Array.isArray(section?.items) ? section.items : [];
   const node = (tag, content, className) => {const value = document.createElement(tag); if (content != null) value.textContent = content; if (className) value.className = className; return value;};
   const filterKeys = ['session', 'turnId', 'project', 'model', 'effort', 'mode', 'inputBand', 'cacheBand'];
@@ -180,11 +185,29 @@
     };
     const amountText = (label, value) => {const places = amountPlaces(label); return places !== undefined && finite(value) && globalThis.usageAtlasAmountFormat ? globalThis.usageAtlasAmountFormat.format(value, places) : text(value);};
     const focusables = () => [...dialog.querySelectorAll('button, select, input, textarea, a[href], [tabindex="0"]')].filter(value => !value.disabled && !value.hidden && value.getClientRects().length);
-    const section = (parent, title) => {const block = node('section'); block.append(node('h3', title)); parent.append(block); return block;};
-    const metrics = (parent, data, keys) => {
+    const section = (parent, title) => {const block = node('section', null, 'ua-details-section'), head = node('div', null, 'ua-details-section-head'); head.append(node('h3', title)); block.append(head); parent.append(block); return block;};
+    const metrics = (parent, data, keys, lead = []) => {
       const list = node('dl', null, 'ua-details-metrics');
-      for (const key of keys) {list.append(node('dt', labels[key] || key), node('dd', /ratio/i.test(key) && finite(data?.[key]) ? text(data[key] * 100) + '%' : amountText(labels[key], data?.[key])));}
+      for (const key of keys) {
+        const cell = node('div', null, 'ua-metric' + (lead.includes(key) ? ' ua-metric-lead' : '')), value = /ratio/i.test(key) && finite(data?.[key]) ? percent(data[key]) : amountText(labels[key], data?.[key]);
+        const dd = node('dd', value); if (value === '-') dd.className = 'ua-empty';
+        cell.append(node('dt', labels[key] || key), dd); list.append(cell);
+      }
       parent.append(list);
+    };
+    // 입력(캐시 포함)·출력 토큰 구성을 한 줄 막대로 보여 준다. 캐시가 입력보다 크면 정의가 다른 기록이므로 그리지 않는다.
+    const tokenMix = (parent, data) => {
+      const input = data?.input, cached = data?.cached, output = data?.output;
+      if (![input, cached, output].every(value => finite(value) && value >= 0) || cached > input || input + output <= 0) return;
+      const total = input + output, parts = [['fresh', '새 입력', input - cached], ['cached', '캐시 입력', cached], ['output', '출력', output]];
+      const block = node('figure', null, 'ua-token-mix'), bar = node('div', null, 'ua-token-bar'), legend = node('figcaption', null, 'ua-token-legend');
+      bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', '토큰 구성 · ' + parts.map(([, label, value]) => `${label} ${text(value)}`).join(' · '));
+      for (const [key, label, value] of parts) {
+        const piece = node('span', null, 'ua-token-' + key); piece.style.flexGrow = String(value); bar.append(piece);
+        const item = node('span', null, 'ua-token-item'), swatch = node('i', null, 'ua-token-' + key); swatch.setAttribute('aria-hidden', 'true');
+        item.append(swatch, node('span', label), node('strong', text(value)), node('span', percent(value / total), 'ua-token-share')); legend.append(item);
+      }
+      block.append(node('div', '토큰 구성', 'ua-token-title'), bar, legend); parent.append(block);
     };
     const notes = (parent, values) => {
       const entries = Array.isArray(values) ? values : values ? [values] : [];
@@ -192,8 +215,9 @@
     };
     const table = (parent, title, source, columns, drill) => {
       const rows = items(source), block = section(parent, title);
-      block.append(node('p', `표본 ${rows.length} / ${text(source?.totalCount)} · 확인 ${text(source?.knownCount)}${source?.truncated ? ' · 일부 표시' : ''}`, 'ua-details-note'));
-      if (!rows.length) {block.append(node('p', '-')); return;}
+      (block.querySelector('.ua-details-section-head') || block).append(node('p', `표본 ${rows.length} / ${text(source?.totalCount)} · 확인 ${text(source?.knownCount)}${source?.truncated ? ' · 일부 표시' : ''}`, 'ua-details-note ua-details-count'));
+      if (!rows.length) {block.append(node('p', '표시할 기록이 없습니다', 'ua-details-empty')); return;}
+      const numeric = columns.map(([, read, format]) => format !== date && rows.some(item => finite(read(item))) && rows.every(item => {const value = read(item); return value == null || finite(value);}));
       const wrap = node('div', null, 'ua-details-table-scroll'), grid = node('table');
       wrap.id = 'ua-table-' + encodeURIComponent(title);
       grid.setAttribute('aria-label', title); wrap.tabIndex = 0; wrap.setAttribute('aria-label', title + ' 표 가로 스크롤');
@@ -214,15 +238,16 @@
           const tr = node('tr');
           for (const [label, read, format] of columns) {
             const td = node('td'), value = read(item);
-            if (drill && label === columns[0][0] && value != null && drill.enabled?.(item) !== false) {const button = node('button', text(value)); button.type = 'button'; button.id = 'ua-drill-' + encodeURIComponent(title + '/' + String(value).slice(0, 200)); button.addEventListener('click', () => drill(item)); td.append(button);}
-            else {const formatted = format ? format(value) : amountPlaces(label) !== undefined ? amountText(label, value) : display({'모드': 'mode', '추론 수준': 'effort', '모델': 'model'}[label], value); if (formatted instanceof Node) td.append(formatted); else td.textContent = formatted;}
+            if (numeric[columns.findIndex(column => column[0] === label)]) td.className = 'ua-num';
+            if (drill && label === columns[0][0] && value != null && drill.enabled?.(item) !== false) {const button = node('button', text(value), 'ua-link'); button.type = 'button'; button.id = 'ua-drill-' + encodeURIComponent(title + '/' + String(value).slice(0, 200)); button.addEventListener('click', () => drill(item)); td.append(button);}
+            else {const formatted = format ? format(value) : amountPlaces(label) !== undefined ? amountText(label, value) : display({'모드': 'mode', '추론 수준': 'effort', '모델': 'model'}[label], value); if (formatted instanceof Node) td.append(formatted); else {td.textContent = formatted; if (formatted === '-') td.classList.add('ua-empty'); else if (String(formatted).length > 24) td.classList.add('ua-wrap');}}
             tr.append(td);
           }
           body.append(tr);
         }
       };
       for (const [index, [label, read, format]] of columns.entries()) {
-        const th = node('th'), button = node('button', label); th.scope = 'col'; button.type = 'button'; button.setAttribute('aria-label', label + ' 정렬');
+        const th = node('th', null, numeric[index] ? 'ua-num' : null), button = node('button', label); th.scope = 'col'; button.type = 'button'; button.setAttribute('aria-label', label + ' 정렬');
         button.id = 'ua-sort-' + encodeURIComponent(title) + '-' + index;
         if (label === '대화') {th.textContent = label; row.append(th); continue;}
         if (read === sortKey) th.setAttribute('aria-sort', 'descending');
@@ -251,7 +276,7 @@
       api.postMessage({type: 'conversation', requestId: conversationLatest, ...selection, filters: currentFilters(), conversationSessionId: conversationTarget.sessionId, conversationHomeKey: conversationTarget.homeKey, cursor});
     };
     const conversationColumn = ['대화', row => row, row => {
-      const button = node('button', '대화 보기'); button.type = 'button';
+      const button = node('button', '대화 보기', 'ua-ghost'); button.type = 'button';
       button.disabled = !row.sessionId || !row.homeKey || report.analysisEnabled === false;
       button.addEventListener('click', () => {
         clearConversation(); conversationTarget = {sessionId: row.sessionId, homeKey: row.homeKey};
@@ -261,16 +286,16 @@
     }];
     const renderConversation = data => {
       const parent = el('panel-conversation'); parent.replaceChildren(); parent.removeAttribute('aria-busy');
-      parent.append(node('h3', '대화 · ' + text(conversationTarget.sessionId)), node('p', '최신순 · 사용자·AI 텍스트 · 선택 구간 이전 메시지는 따로 표시합니다.', 'ua-details-note'));
+      const head = node('div', null, 'ua-details-section-head'); head.append(node('h3', '대화 · ' + text(conversationTarget.sessionId)), node('p', '최신순 · 선택 구간 이전 메시지는 따로 표시', 'ua-details-note ua-details-count')); parent.append(head);
       const toolbar = node('div', null, 'ua-conversation-toolbar');
       const latestButton = node('button', '최신 대화'), older = node('button', data.loading ? '계속 읽기' : '이전 대화'); latestButton.type = older.type = 'button';
       latestButton.addEventListener('click', () => loadConversation()); older.disabled = !data.next; older.addEventListener('click', () => loadConversation(data.next)); toolbar.append(latestButton, older); parent.append(toolbar);
       const list = node('div'); list.id = 'ua-conversation-messages';
       for (const row of [...(Array.isArray(data.items) ? data.items : [])].sort((a, b) => b.time - a.time)) {
         if (!['user', 'assistant'].includes(row.role) || !finite(row.time) || typeof row.text !== 'string') continue;
-        const article = node('article', null, 'ua-conversation-message'), header = node('header'); article.dataset.time = row.time;
+        const article = node('article', null, 'ua-conversation-message ua-role-' + row.role), header = node('header'); article.dataset.time = row.time;
         header.append(node('strong', row.role === 'user' ? '사용자' : 'AI'), node('time', date(row.time)));
-        if (row.context) header.append(node('span', '선택 구간 이전')); if (row.clipped) header.append(node('span', '긴 메시지 일부 표시'));
+        if (row.context) header.append(node('span', '선택 구간 이전', 'ua-tag')); if (row.clipped) header.append(node('span', '긴 메시지 일부 표시', 'ua-tag'));
         article.append(header, node('pre', row.text)); list.append(article);
       }
       parent.append(list);
@@ -413,7 +438,7 @@
     const render = () => {
       fillFilters();
       const usage = el('panel-report'); usage.replaceChildren();
-      if (finite(report.summary?.start) && finite(report.summary?.end)) el('details-context').textContent = `${providerName(selection.provider, getModel().data?.[selection.provider]?.last?.label)} · ${{five: '5시간', week: '주간', credit: '크레딧'}[selection.window]} · ${date(report.summary.start)} – ${date(report.summary.end)} (종료 시각 제외)`;
+      if (finite(report.summary?.start) && finite(report.summary?.end)) el('details-context').textContent = `${date(report.summary.start)} – ${date(report.summary.end)} · 종료 시각 제외`;
       if (report.analysisEnabled === false) usage.append(node('p', '세션 분석이 설정에서 꺼져 있습니다. 사용률 기록과 수집 범위는 계속 확인할 수 있습니다.', 'ua-details-note'));
       el('details-filters').hidden = report.quotaOnly === true;
       el('tab-conversation').hidden = report.quotaOnly === true;
@@ -421,7 +446,9 @@
         usage.append(node('p', '그룹별 한도 관측입니다. 호출·토큰·대화 및 추가 크레딧 소비는 제공되지 않습니다.', 'ua-details-note'));
         table(usage, '사용률 관측', subset(report.observations), [['시각', row => row.time, date], ['사용률', row => finite(row.used) ? text(row.used) + '%' : '-'], ['초기화', row => row.reset, date]]);
       } else {
-      metrics(section(usage, '선택 구간 요약'), report.summary, ['sourceCallCount', 'eligibleCallCount', 'callCount', 'pricedCallCount', 'costUsd', 'knownCostUsd', 'input', 'cached', 'output', 'cacheRatio', 'sessionCount', 'requestCount']);
+      const summary = section(usage, '선택 구간 요약');
+      metrics(summary, report.summary, ['knownCostUsd', 'costUsd', 'callCount', 'pricedCallCount', 'sessionCount', 'requestCount', 'sourceCallCount', 'eligibleCallCount', 'input', 'cached', 'output', 'cacheRatio'], ['knownCostUsd']);
+      tokenMix(summary, report.summary);
       const aggregate = [
         ['세션', row => row.sessionId || row.id]
       , ['최근', row => row.lastObservedAt ?? row.completedAt ?? row.startedAt, date]
@@ -505,8 +532,8 @@
       , ['모드', row => row.mode]
       , ['시작', row => row.start, date]
       , ['종료', row => row.end, date]
-      , ['이전 비율', row => row.beforeRatio, value => finite(value) ? text(value * 100) + '%' : '-']
-      , ['이후 비율', row => row.afterRatio, value => finite(value) ? text(value * 100) + '%' : '-']
+      , ['이전 비율', row => row.beforeRatio, percent]
+      , ['이후 비율', row => row.afterRatio, percent]
       , ['표본', row => row.sampleCount]
       ]);
       const conversion = section(performance, '구독 사용률 자동 환산');
@@ -521,7 +548,7 @@
       ]);
       notes(conversion, [...(report.conversion?.notes || []), ...(report.conversion?.assumedDebitCount > 0 ? ['호출 근거가 없는 차감 ' + text(report.conversion.assumedDebitCount) + '개 구간에 Standard를 가정했습니다.'] : [])]);
       const estimate = section(performance, 'API 비교 비용 / 사용률 100%');
-      metrics(estimate, report.estimate, ['valueUsdPer100Pct', 'knownCostUsd', 'quotaDelta', 'matchedCallCount', 'unmatchedCallCount', 'provisionalCallCount', 'pricedCallCount', 'assumedCallCount']);
+      metrics(estimate, report.estimate, ['valueUsdPer100Pct', 'knownCostUsd', 'quotaDelta', 'matchedCallCount', 'unmatchedCallCount', 'provisionalCallCount', 'pricedCallCount', 'assumedCallCount'], ['valueUsdPer100Pct']);
       notes(estimate, report.estimate?.notes);
       sensitivityTable(estimate, '조건별 민감도', report.estimate?.sensitivity);
       renderHistory(); renderDiagnostics();
@@ -617,7 +644,12 @@
         clearConversation();
         report = null; preview = null; range = null; reasonDraft = ''; pools.clear(); endpointPool.clear(); projectNames.clear(); projectNameCounts.clear(); for (const key of filterKeys) {delete filters[key]; form.elements.namedItem(key).value = '';}
         returnFocus = target?.dataset?.detailsLine || target || document.activeElement;
-        el('details-context').textContent = `${providerName(value.provider, getModel().data?.[value.provider]?.last?.label)} · ${{five: '5시간', week: '주간', credit: '크레딧'}[value.window]} · ${date(value.start)} – ${date(value.end)}`;
+        // 메인 그래프 범례와 같은 제공자 색·표식을 쓴다.
+        const legendColor = typeof value.provider === 'string' ? document.getElementById('ua-' + value.provider)?.style.getPropertyValue('--c') : '';
+        dialog.style.setProperty('--c', legendColor || (value.provider === 'claude' ? 'var(--ua-b)' : 'var(--ua-a)'));
+        el('details-marker').className = markerClass(value.provider);
+        el('details-title-text').textContent = [providerName(value.provider, getModel().data?.[value.provider]?.last?.label), windowNames[value.window], '사용량'].filter(Boolean).join(' ');
+        el('details-context').textContent = `${date(value.start)} – ${date(value.end)}`;
         for (const key of ['report', 'conversation', 'coverage', 'performance', 'history']) el('panel-' + key).replaceChildren();
         el('details-provenance').textContent = ''; el('details-diagnostics').replaceChildren(); activateTab('report');
         if (!dialog.open) dialog.showModal(); el('details-close').focus({preventScroll: true}); request();

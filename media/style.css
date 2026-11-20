@@ -110,56 +110,8 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 
 #usage-atlas #ua-settings{margin-left:auto}
 
-#usage-atlas .ua-details{color:var(--ua-text);background:var(--ua-bg);border:0;border-radius:0;padding:0;position:fixed;inset:0;margin:0;width:100vw;max-width:none;height:100dvh;max-height:none;overflow:hidden;font:13px/1.45 var(--ua-font)}
-#usage-atlas .ua-details[open]{display:flex;flex-direction:column}
-#usage-atlas .ua-details::backdrop{background:#0008}
-#usage-atlas .ua-details-header{display:flex;flex:none;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px 8px}
-#usage-atlas .ua-details-header>div{min-width:0}
-#usage-atlas .ua-details h2{font-size:17px;margin:0 0 4px}
-#usage-atlas .ua-details h3{font-size:14px;margin:16px 0 8px}
-#usage-atlas .ua-details h4{font-size:12px;margin:10px 0 4px}
-#usage-atlas .ua-details p{margin:4px 0;overflow-wrap:anywhere}
-#usage-atlas #ua-details-context{color:var(--ua-muted);font-size:12px}
-#usage-atlas #ua-details-close{flex:none}
-#usage-atlas .ua-details-tabs{display:flex;flex:none;gap:4px;padding:0 16px 8px;overflow-x:auto;border-bottom:1px solid var(--ua-border)}
-#usage-atlas .ua-details-tabs button{white-space:nowrap;flex:none}
-#usage-atlas .ua-details-tabs [aria-selected=true]{border-color:var(--ua-focus);box-shadow:inset 0 -2px var(--ua-focus);font-weight:600}
-#usage-atlas .ua-details-scroll{min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;padding:10px 16px 16px;scrollbar-gutter:stable}
-#usage-atlas .ua-details-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:end}
-#usage-atlas .ua-details-filters label{display:grid;gap:3px;min-width:0;font-size:12px;color:var(--ua-muted)}
-#usage-atlas .ua-details-filters select{width:100%;min-width:0;padding:4px}
-#usage-atlas .ua-details-metrics{display:grid;grid-template-columns:minmax(130px,1fr) minmax(60px,1fr);gap:4px 12px;margin:8px 0;max-width:620px}
-#usage-atlas .ua-details-metrics dt{color:var(--ua-muted);overflow-wrap:anywhere}
-#usage-atlas .ua-details-metrics dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-#usage-atlas .ua-details-note{font-size:12px;color:var(--ua-muted)}
-#usage-atlas .ua-details-table-scroll{overflow-x:auto;max-width:100%;margin:8px 0;overscroll-behavior-x:contain}
-#usage-atlas .ua-details table{border-collapse:collapse;min-width:100%;font-size:12px;font-variant-numeric:tabular-nums}
-#usage-atlas .ua-details th,#usage-atlas .ua-details td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--ua-border);vertical-align:top;max-width:280px;overflow-wrap:anywhere}
-#usage-atlas .ua-details th{white-space:nowrap;background:var(--ua-panel)}
-#usage-atlas .ua-details th button{font-size:12px;padding:2px 4px;min-height:30px;border-color:transparent;background:transparent}
-#usage-atlas .ua-details td button{font-size:12px;padding:3px 6px;min-height:30px;text-align:left;overflow-wrap:anywhere}
-#usage-atlas .ua-details-range{display:grid;gap:4px;margin:10px 0;color:var(--ua-muted);font-size:12px}
-#usage-atlas .ua-details input[type=range]{width:100%;height:24px}
-#usage-atlas .ua-details-reason{display:grid;gap:4px;margin:10px 0}
-#usage-atlas .ua-details input[type=text]{width:100%;height:36px;padding:6px 8px;color:var(--ua-text);background:var(--ua-bg);border:1px solid var(--ua-border);border-radius:6px;font:inherit}
-#usage-atlas .ua-details-actions{display:flex;flex-wrap:wrap;gap:8px}
-#usage-atlas .ua-details-footer{flex:none;border-top:1px solid var(--ua-border);padding:8px 16px;font-size:11px;color:var(--ua-muted);max-height:28%;overflow:auto}
-#usage-atlas #ua-details-provenance{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 10px}
-#usage-atlas .ua-provenance-sources{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;max-width:100%}
-#usage-atlas .ua-provenance-sources a{white-space:nowrap}
-#usage-atlas .ua-provenance-meta{max-width:100%;overflow-wrap:anywhere}
-#usage-atlas .ua-details a{color:var(--ua-focus)}
 #usage-atlas [data-details-line]{pointer-events:none}
 #usage-atlas [data-details-line]:focus-visible{outline:none;stroke:var(--ua-focus);stroke-width:4;opacity:1}
-@media(max-width:480px){
-
-  #usage-atlas .ua-details-header{padding:10px 10px 6px;gap:6px}
-  #usage-atlas .ua-details-scroll{padding:8px 10px 12px;scrollbar-gutter:auto}
-  #usage-atlas .ua-details-tabs{padding:0 10px 6px;gap:3px}
-  #usage-atlas .ua-details-tabs button{padding:5px 6px;font-size:12px}
-  #usage-atlas .ua-details-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
-  #usage-atlas .ua-details-footer{padding:6px 10px}
-}
 
 #usage-atlas .ua-trace{transition:opacity .18s cubic-bezier(.22,1,.36,1)}
 #usage-atlas .ua-muted-trace{opacity:calc(var(--ua-trace-opacity,1) * .18)}
@@ -167,7 +119,161 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 @media(prefers-reduced-motion:reduce){#usage-atlas .ua-trace{transition:none}}
 #usage-atlas .ua-provider[aria-pressed=true]{border-color:var(--c)}
 
-#usage-atlas .ua-conversation-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
-#usage-atlas .ua-conversation-message{border-bottom:1px solid var(--ua-border);padding:12px 0;min-width:0}
-#usage-atlas .ua-conversation-message header{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;color:var(--ua-muted)}
-#usage-atlas .ua-conversation-message pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:inherit;margin:8px 0 0;max-width:100%}
+/* 상세 분석 모달: 장부처럼 조용한 표면 위에 핵심 수치와 토큰 구성만 제공자 색으로 둔다. */
+#usage-atlas .ua-details{
+  --d-raised:color-mix(in srgb,var(--ua-text) 3.5%,var(--ua-bg))
+  ;--d-hover:color-mix(in srgb,var(--ua-text) 6%,var(--ua-bg))
+  ;--d-line:color-mix(in srgb,var(--ua-text) 10%,transparent)
+  ;--d-line-strong:color-mix(in srgb,var(--ua-text) 16%,transparent)
+  ;--d-faint:color-mix(in srgb,var(--ua-muted) 62%,transparent)
+  ;--d-mono:var(--vscode-editor-font-family,'Cascadia Mono',Consolas,ui-monospace,monospace)
+  ;--d-gutter:max(24px,calc((100% - 1440px) / 2))
+  ;--d-ease:cubic-bezier(.22,1,.36,1)
+  ;color:var(--ua-text);background:var(--ua-bg);border:0;border-radius:0;padding:0;position:fixed;inset:0;margin:0;width:100vw;max-width:none;height:100dvh;max-height:none;overflow:hidden;font:13px/1.5 var(--ua-font)
+}
+#usage-atlas .ua-details[open]{display:flex;flex-direction:column}
+#usage-atlas .ua-details::backdrop{background:#0008}
+#usage-atlas .ua-details p{margin:0;overflow-wrap:anywhere}
+#usage-atlas .ua-details a{color:inherit;text-decoration-color:var(--d-line-strong);text-underline-offset:3px}
+#usage-atlas .ua-details a:hover{text-decoration-color:currentColor}
+
+/* 버튼·입력: 메인 화면보다 한 단계 촘촘하게 */
+#usage-atlas .ua-details button{min-height:32px;padding:4px 12px;border-radius:8px;border-color:var(--d-line-strong);background:var(--ua-bg);transition:background-color .12s var(--d-ease),border-color .12s var(--d-ease),color .12s var(--d-ease)}
+#usage-atlas .ua-details button:hover:not(:disabled){background:var(--d-hover)}
+#usage-atlas .ua-details button:disabled{background:transparent;border-color:var(--d-line)}
+#usage-atlas .ua-details select{min-height:32px;padding:4px 8px;border-radius:8px;border-color:var(--d-line-strong);background:var(--ua-bg)}
+#usage-atlas .ua-details input[type=text]{width:100%;height:36px;padding:6px 12px;color:var(--ua-text);background:var(--ua-bg);border:1px solid var(--d-line-strong);border-radius:8px;font:inherit}
+#usage-atlas .ua-details input[type=range]{width:100%;height:24px;accent-color:var(--c,var(--ua-a))}
+
+/* 머리글 */
+#usage-atlas .ua-details-header{display:flex;flex:none;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px var(--d-gutter) 16px}
+#usage-atlas .ua-details-heading{min-width:0;display:grid;gap:4px}
+#usage-atlas .ua-details h2{display:flex;align-items:center;gap:10px;margin:0;font-size:18px;font-weight:600;line-height:1.3}
+#usage-atlas .ua-details h2 .ua-dot{width:10px;height:10px}
+#usage-atlas #ua-details-context{padding-left:20px;color:var(--ua-muted);font:12px/1.5 var(--d-mono);font-variant-numeric:tabular-nums}
+#usage-atlas #ua-details-close{flex:none;background:transparent}
+
+/* 탭: 상자 대신 밑줄 */
+#usage-atlas .ua-details-tabs{display:flex;flex:none;gap:4px;padding:0 var(--d-gutter);overflow-x:auto;border-bottom:1px solid var(--d-line);scrollbar-width:none}
+#usage-atlas .ua-details-tabs button{position:relative;flex:none;min-height:40px;padding:0 12px;border:0;border-radius:0;background:transparent;color:var(--ua-muted);white-space:nowrap}
+#usage-atlas .ua-details-tabs button:hover:not(:disabled){background:transparent;color:var(--ua-text)}
+#usage-atlas .ua-details-tabs button::after{content:'';position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:transparent;transition:background-color .12s var(--d-ease)}
+#usage-atlas .ua-details-tabs [aria-selected=true]{color:var(--ua-text);font-weight:500}
+#usage-atlas .ua-details-tabs [aria-selected=true]::after{background:var(--ua-text)}
+#usage-atlas .ua-details-tabs button:focus-visible{outline-offset:-2px}
+
+/* 본문 */
+#usage-atlas .ua-details-scroll{min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;padding:16px var(--d-gutter) 40px;scrollbar-gutter:stable}
+#usage-atlas .ua-details-filters{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;align-items:end;padding-bottom:16px;border-bottom:1px solid var(--d-line)}
+#usage-atlas .ua-details-filters label{display:grid;gap:4px;min-width:0;font-size:12px;color:var(--ua-muted)}
+#usage-atlas .ua-details-filters select{width:100%;min-width:0;color:var(--ua-text)}
+#usage-atlas #ua-details-filter-reset{border-color:transparent;background:transparent;color:var(--ua-muted);justify-self:start}
+#usage-atlas #ua-details-filter-reset:hover{color:var(--ua-text)}
+#usage-atlas .ua-details-statusbar{display:flex;align-items:center;gap:12px;min-height:20px;margin:12px 0 0}
+#usage-atlas #ua-details-status{font-size:12px;color:var(--ua-muted)}
+#usage-atlas #ua-details-status:empty{display:none}
+
+#usage-atlas .ua-details-section{margin-top:32px}
+#usage-atlas .ua-details-section .ua-details-section{margin-top:24px}
+#usage-atlas .ua-details-section-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:12px}
+#usage-atlas .ua-details h3{margin:0;font-size:14px;font-weight:600;line-height:1.4}
+#usage-atlas #ua-details-diagnostics>h3{margin:32px 0 12px}
+#usage-atlas .ua-details h4{margin:16px 0 8px;font-size:12px;font-weight:500;color:var(--ua-muted)}
+#usage-atlas .ua-details .ua-details-note{max-width:960px;margin-top:12px;font-size:12px;line-height:1.55;color:var(--ua-muted)}
+#usage-atlas .ua-details .ua-details-note+.ua-details-note{margin-top:4px}
+#usage-atlas .ua-details .ua-details-section-head .ua-details-count{margin:0;font:12px var(--d-mono);color:var(--ua-muted);font-variant-numeric:tabular-nums}
+#usage-atlas .ua-details-empty{padding:16px;border:1px dashed var(--d-line-strong);border-radius:10px;font-size:12px;color:var(--ua-muted)}
+#usage-atlas .ua-details-section>.ua-details-section-head~p:not([class]){font-size:12px}
+
+/* 지표: 괘선으로 나뉜 셀 */
+#usage-atlas .ua-details-metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:1px;margin:0;border:1px solid var(--d-line);border-radius:12px;overflow:hidden}
+#usage-atlas .ua-metric{display:flex;flex-direction:column;justify-content:space-between;gap:8px;min-width:0;padding:12px 16px;outline:1px solid var(--d-line)}
+#usage-atlas .ua-details-metrics dt{font-size:12px;line-height:1.4;color:var(--ua-muted);overflow-wrap:anywhere}
+#usage-atlas .ua-details-metrics dd{margin:0;font-size:17px;font-weight:500;line-height:1.25;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+#usage-atlas .ua-details-metrics dd.ua-empty{color:var(--d-faint);font-weight:400}
+#usage-atlas .ua-metric-lead{grid-column:span 2;background:var(--d-raised)}
+@media(min-width:720px){#usage-atlas .ua-metric-lead{grid-row:span 2;justify-content:flex-start}}
+#usage-atlas .ua-metric-lead dd{font-size:28px;font-weight:500;letter-spacing:-.01em;color:var(--c,var(--ua-a))}
+#usage-atlas .ua-metric-lead dd.ua-empty{color:var(--d-faint)}
+#usage-atlas .ua-details-metrics+.ua-details-metrics{margin-top:12px}
+
+/* 토큰 구성 막대 */
+#usage-atlas .ua-token-mix{margin:16px 0 0;padding:16px;border:1px solid var(--d-line);border-radius:12px}
+#usage-atlas .ua-token-title{margin-bottom:12px;font-size:12px;color:var(--ua-muted)}
+#usage-atlas .ua-token-bar{display:flex;gap:2px;height:10px;border-radius:5px;overflow:hidden;background:var(--d-line)}
+#usage-atlas .ua-token-bar>span{flex-basis:0;min-width:0}
+#usage-atlas .ua-token-fresh{background:var(--c,var(--ua-a))}
+#usage-atlas .ua-token-cached{background:color-mix(in srgb,var(--c,var(--ua-a)) 40%,var(--ua-bg))}
+#usage-atlas .ua-token-output{background:color-mix(in srgb,var(--ua-text) 45%,var(--ua-bg))}
+#usage-atlas .ua-token-legend{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:12px;font-size:12px;font-variant-numeric:tabular-nums}
+#usage-atlas .ua-token-item{display:inline-flex;align-items:center;gap:8px;color:var(--ua-muted)}
+#usage-atlas .ua-token-item i{width:8px;height:8px;border-radius:2px;flex:none}
+#usage-atlas .ua-token-item strong{font-weight:500;color:var(--ua-text)}
+#usage-atlas .ua-token-share{font-family:var(--d-mono)}
+
+/* 표 */
+#usage-atlas .ua-details-table-scroll{overflow-x:auto;max-width:100%;margin:0;border:1px solid var(--d-line);border-radius:12px;overscroll-behavior-x:contain}
+#usage-atlas .ua-details-table-scroll:focus-visible{outline-offset:2px}
+#usage-atlas .ua-details table{border-collapse:separate;border-spacing:0;min-width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+#usage-atlas .ua-details th,#usage-atlas .ua-details td{padding:8px 12px;text-align:left;vertical-align:baseline;max-width:280px;overflow-wrap:anywhere}
+#usage-atlas .ua-details td{border-top:1px solid var(--d-line);white-space:nowrap}
+#usage-atlas .ua-details td.ua-wrap{white-space:normal;min-width:180px}
+#usage-atlas .ua-details th{padding:0;white-space:nowrap;font-weight:500;color:var(--ua-muted);background:var(--d-raised)}
+#usage-atlas .ua-details th:not(:has(button)){padding:8px 12px}
+#usage-atlas .ua-details th button{display:flex;align-items:center;gap:4px;width:100%;min-height:36px;padding:8px 12px;border:0;border-radius:0;background:transparent;color:inherit;font-size:12px;font-weight:500;text-align:inherit}
+#usage-atlas .ua-details th button:hover:not(:disabled){background:transparent;color:var(--ua-text)}
+#usage-atlas .ua-details th button:focus-visible{outline-offset:-2px}
+#usage-atlas .ua-details th.ua-num button{justify-content:flex-end}
+#usage-atlas .ua-details th[aria-sort] button{color:var(--ua-text)}
+#usage-atlas .ua-details th[aria-sort] button::after{content:'↓';font-size:11px;color:var(--ua-muted)}
+#usage-atlas .ua-details th[aria-sort=ascending] button::after{content:'↑'}
+#usage-atlas .ua-details .ua-num{text-align:right;white-space:nowrap}
+#usage-atlas .ua-details td.ua-empty{color:var(--d-faint)}
+#usage-atlas .ua-details tbody tr{transition:background-color .12s var(--d-ease)}
+#usage-atlas .ua-details tbody tr:hover{background:var(--d-raised)}
+#usage-atlas .ua-details td button{min-height:28px;padding:2px 8px;font-size:12px;text-align:left;overflow-wrap:anywhere}
+#usage-atlas .ua-details td .ua-link{min-height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--ua-text);font-weight:500;text-decoration:underline;text-decoration-color:var(--d-line-strong);text-underline-offset:3px}
+#usage-atlas .ua-details td .ua-link:hover:not(:disabled){background:transparent;text-decoration-color:currentColor}
+#usage-atlas .ua-details td .ua-ghost{white-space:nowrap;color:var(--ua-muted)}
+#usage-atlas .ua-details td .ua-ghost:hover:not(:disabled){color:var(--ua-text)}
+
+/* 이력·제외 */
+#usage-atlas .ua-details-range{display:grid;gap:4px;margin:12px 0;color:var(--ua-muted);font-size:12px;font-variant-numeric:tabular-nums}
+#usage-atlas .ua-details-reason{display:grid;gap:4px;margin:12px 0;font-size:12px;color:var(--ua-muted)}
+#usage-atlas .ua-details-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+#usage-atlas .ua-details-restore{display:grid;gap:8px;justify-items:start;margin-top:16px;padding:12px 16px;background:var(--d-raised);border:1px solid var(--d-line);border-radius:12px}
+
+/* 바닥글 */
+#usage-atlas .ua-details-footer{display:grid;gap:2px;flex:none;border-top:1px solid var(--d-line);padding:8px var(--d-gutter);font-size:11px;line-height:1.6;color:var(--ua-muted);max-height:28%;overflow:auto}
+#usage-atlas #ua-details-provenance{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px}
+#usage-atlas .ua-provenance-sources{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;max-width:100%}
+#usage-atlas .ua-provenance-sources a{white-space:nowrap}
+#usage-atlas .ua-provenance-meta{max-width:100%;overflow-wrap:anywhere;font-family:var(--d-mono)}
+
+/* 대화 */
+#usage-atlas .ua-conversation-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 16px}
+#usage-atlas #ua-conversation-messages{display:grid;gap:8px}
+#usage-atlas .ua-conversation-message{min-width:0;padding:12px 16px;border:1px solid var(--d-line);border-left:2px solid var(--d-line-strong);border-radius:4px 10px 10px 4px}
+#usage-atlas .ua-conversation-message.ua-role-user{border-left-color:var(--c,var(--ua-a));background:var(--d-raised)}
+#usage-atlas .ua-conversation-message header{display:flex;gap:4px 12px;align-items:baseline;flex-wrap:wrap;color:var(--ua-muted);font-size:12px}
+#usage-atlas .ua-conversation-message header strong{color:var(--ua-text);font-weight:500}
+#usage-atlas .ua-conversation-message time{font-family:var(--d-mono);font-variant-numeric:tabular-nums}
+#usage-atlas .ua-tag{padding:0 6px;border:1px solid var(--d-line-strong);border-radius:4px;font-size:11px}
+#usage-atlas .ua-conversation-message pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:inherit;line-height:1.6;margin:8px 0 0;max-width:100%}
+
+@media(prefers-reduced-motion:reduce){#usage-atlas .ua-details *{transition:none!important}}
+@media(max-width:480px){
+  #usage-atlas .ua-details{--d-gutter:12px}
+  #usage-atlas .ua-details-header{padding-top:12px;padding-bottom:12px;gap:8px}
+  #usage-atlas .ua-details h2{font-size:16px}
+  #usage-atlas #ua-details-context{padding-left:0}
+  #usage-atlas .ua-details-scroll{padding-top:12px;padding-bottom:24px;scrollbar-gutter:auto}
+  #usage-atlas .ua-details-tabs{gap:0}
+  #usage-atlas .ua-details-tabs button{padding:0 8px}
+  #usage-atlas .ua-details-tabs button::after{left:8px;right:8px}
+  #usage-atlas .ua-details-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  #usage-atlas .ua-details-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #usage-atlas .ua-metric{padding:12px}
+  #usage-atlas .ua-metric-lead dd{font-size:24px}
+  #usage-atlas .ua-details-section{margin-top:24px}
+}

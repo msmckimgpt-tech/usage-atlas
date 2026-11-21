@@ -9,6 +9,14 @@ const rootFiles = ['package.json', 'package-lock.json', '.gitignore', '.gitattri
 const sensitiveName = /(^|\/)(?:\.env(?:\..*)?|auth\.json|credentials[^/]*|history\.jsonl|history-archive\.sqlite(?:-wal|-shm)?|metadata\.json|session-index\.json|forecast-learning\.json|settings\.json|id_rsa|id_ed25519)$|\.(?:pem|key|jsonl|vsix|log|exe)$/i;
 const secrets = [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/, /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b/, /\bsk-(?:proj-|ant-)[A-Za-z0-9_-]{40,}\b/];
 const privateHome = /[A-Z]:[\\/]+Users[\\/]+[^\\/\s'"<>]+|\/(?:home|Users)\/(?!private(?:\/|\b)|fixture(?:\/|\b)|test(?:\/|\b))[^\/\s'"<>]+/i;
+const guideFiles = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'], guideDir = '.agent';
+async function present(name) {
+  try {
+    const stat = await fs.lstat(path.join(root, name));
+    if (stat.isSymbolicLink()) throw new Error('Symbolic links are not publication inputs: ' + name);
+    return true;
+  } catch (error) {if (error.code === 'ENOENT') return false; throw error;}
+}
 async function files(dir) {
   const result = [];
   for (const entry of await fs.readdir(path.join(root, dir), {withFileTypes: true})) {
@@ -21,6 +29,16 @@ async function files(dir) {
 (async () => {
   const inputs = [...rootFiles];
   for (const dir of directories) inputs.push(...await files(dir));
+  // 배포 저장소에는 내보내기가 배포 전용 에이전트 지침을 함께 싣는다. VSIX 에는 들어가지 않지만(.vscodeignore 허용 목록) 같은 비밀·경로 검사를 받는다.
+  for (const name of guideFiles) if (await present(name)) inputs.push(name);
+  if (await present(guideDir)) for (const file of await files(guideDir)) {
+    if (!/(?:\.md|\/plugin\.json)$/.test(file)) throw new Error('Unexpected agent guide file: ' + file);
+    inputs.push(file);
+  }
+  // 지침은 VSIX 에 들어가면 안 된다. .vscodeignore 는 전부 제외(**) 후 필요한 것만 되살리는 방식이어야 한다.
+  const ignore = (await fs.readFile(path.join(root, '.vscodeignore'), 'utf8')).split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  if (ignore[0] !== '**') throw new Error('.vscodeignore must start with ** (allow-list packaging)');
+  for (const line of ignore.slice(1)) if (line.startsWith('!') && /^!(?:\*|\*\*\/|\.agent|AGENTS|CLAUDE|GEMINI)|\*\.md$/i.test(line)) throw new Error('.vscodeignore would package agent guides: ' + line);
   const allowed = new Set(inputs);
   try {
     const result = await run('git', ['ls-files', '-z'], {cwd: root, windowsHide: true, maxBuffer: 2000000});

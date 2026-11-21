@@ -93,6 +93,11 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 #usage-atlas .ua-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 #usage-atlas .ua-foot{height:20px;flex-shrink:0;color:var(--ua-muted);font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 #usage-atlas .ua-environment{font-size:11px}
+#usage-atlas .ua-pace-record{position:absolute;right:0;bottom:0;height:22px;min-height:22px;padding:1px 10px;font-size:11px;line-height:18px;z-index:1;opacity:.8}
+#usage-atlas .ua-pace-record:hover,#usage-atlas .ua-pace-record:focus-visible,#usage-atlas .ua-pace-record[aria-pressed="true"]{opacity:1}
+#usage-atlas .ua-pace-record[aria-pressed="true"]{border-color:var(--ua-focus);color:var(--ua-focus);background:var(--ua-hover)}
+#usage-atlas .ua-pace-record[aria-pressed="true"]::before{content:'✓ '}
+#usage-atlas .ua-pace-record[aria-disabled="true"]{opacity:.55;border-style:dashed}
 #usage-atlas [hidden]{display:none!important}
 @media(max-width:650px){
   #usage-atlas{padding:8px}

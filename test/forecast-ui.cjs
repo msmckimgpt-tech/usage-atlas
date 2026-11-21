@@ -173,6 +173,41 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     assert.deepEqual(starts, Array(6).fill(49));
     await page.screenshot({path: path.join(root, 'screenshots/forecast-corrected-history.png')});
     report.cases.push('Codex/Claude/AGY five/week render six future curves from qualified history despite sparse recent coverage or a usage correction; selected recent policies also fall back');
+    // 예측 기록 토글: 지나간 시간의 과거 예측선만 겹치고 다른 UI 배치는 바꾸지 않는다.
+    await page.locator('#ua-credit').uncheck(); await page.selectOption('#ua-mode', 'usage'); await page.selectOption('#ua-basis', 'current');
+    const recordNow = now, snapshots = {
+        codex: {five: [{at: recordNow - 50 * minute, reset: recordNow + 5 * hour, mult: 5, points: [[recordNow - 50 * minute, 25], [recordNow + 2 * hour, 90]]}, {at: recordNow - 20 * minute, reset: recordNow + 5 * hour, mult: 5, points: [[recordNow - 20 * minute, 40], [recordNow + hour, 70]]}], week: [{at: recordNow - 55 * minute, reset: recordNow + 5 * 86400000, mult: 5, points: [[recordNow - 55 * minute, 30], [recordNow + 86400000, 60]]}]}
+      , claude: {five: [{at: recordNow - 40 * minute, reset: recordNow + 5 * hour, mult: null, points: [[recordNow - 40 * minute, 20], [recordNow + 3 * hour, 80]]}, {at: recordNow + minute, reset: recordNow + 5 * hour, mult: null, points: [[recordNow + minute, 50], [recordNow + 2 * hour, 60]]}]}
+    };
+    await update({now: recordNow, data, forecastRecord: snapshots});
+    const toggle = page.locator('#ua-pace-record');
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false'); assert.equal(await page.locator('[data-forecast-record]').count(), 0);
+    const layout = () => page.evaluate(() => Object.fromEntries(['chart', 'navigator', 'range', 'environment', 'codex', 'claude', 'mode', 'settings'].map(id => {const r = document.getElementById('ua-' + id).getBoundingClientRect(); return [id, [r.x, r.y, r.width, r.height].map(v => Math.round(v * 10) / 10)];})));
+    const before = await layout();
+    await toggle.click(); await paint();
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    assert.deepEqual(await layout(), before, 'toggling the record never moves other controls');
+    const records3 = await page.locator('[data-forecast-record]').evaluateAll(nodes => nodes.map(n => ({key: n.dataset.forecastRecord, count: +n.dataset.recordCount, events: getComputedStyle(n).pointerEvents, maxX: Math.max(...[...n.getAttribute('d').matchAll(/[ML](-?[\d.e+]+),/g)].map(m => +m[1]))})));
+    assert.deepEqual(records3.map(r => r.key + ':' + r.count).sort(), ['claude-five:1', 'codex-five:2', 'codex-week:1'], 'snapshots from now or later are not drawn');
+    const nowX = +await page.locator('[data-now]').getAttribute('x1');
+    for (const r of records3) {assert.equal(r.events, 'none'); assert.ok(r.maxX <= nowX + .01, 'recorded forecasts stop at the current time');}
+    const corner = await page.evaluate(() => {const b = document.getElementById('ua-pace-record').getBoundingClientRect(), g = document.querySelector('.ua-graph').getBoundingClientRect(); return {right: g.right - b.right, bottom: g.bottom - b.bottom};});
+    assert.ok(Math.abs(corner.right) < 1 && Math.abs(corner.bottom) < 1, 'toggle sits at the bottom-right corner of the graph');
+    await page.screenshot({path: path.join(root, 'screenshots/forecast-record-on.png')});
+    assert.equal(await toggle.getAttribute('aria-disabled'), 'false'); assert.match(await toggle.getAttribute('title'), /표시 중 4개/, 'counts individual snapshots');
+    await page.selectOption('#ua-mode', 'delta'); await paint(); assert.equal(await page.locator('[data-forecast-record]').count(), 0);
+    assert.equal(await toggle.getAttribute('aria-disabled'), 'true', 'unsupported views mark the toggle unavailable'); assert.match(await toggle.getAttribute('title'), /사용률 보기에서 표시/);
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true', 'the choice is remembered');
+    await page.selectOption('#ua-mode', 'usage'); await page.selectOption('#ua-basis', 'base'); await paint();
+    assert.deepEqual(await page.locator('[data-forecast-record]').evaluateAll(nodes => nodes.map(n => n.dataset.recordGroup).sort()), ['claude-five-raw', 'codex-five-scaled', 'codex-week-scaled'], 'base capacity puts unknown-multiplier snapshots on the raw axis');
+    await page.selectOption('#ua-basis', 'current');
+    await page.setViewportSize({width: 360, height: 900}); await page.waitForTimeout(80);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); assert.equal(await page.locator('[data-forecast-record]').count(), 3);
+    await page.setViewportSize({width: 1440, height: 900});
+    await update({now: recordNow, data, forecastRecord: {}}); assert.match(await toggle.getAttribute('title'), /아직 없습니다/);
+    await toggle.click(); await paint(); assert.equal(await page.locator('[data-forecast-record]').count(), 0);
+    await update({now: recordNow, data, forecastRecord: snapshots, forecastEnabled: false}); assert.equal(await toggle.isHidden(), true);
+    report.cases.push('forecast record toggle overlays only past parts of recorded forecasts at the bottom-right without moving other UI');
     assert.deepEqual(report.errors, []); report.status = 'PASS';
   } finally {await browser.close(); fs.writeFileSync(path.join(root, 'test-forecast-ui.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));}
 })().catch(error => {console.error(error); process.exitCode = 1;});

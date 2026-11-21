@@ -11,6 +11,7 @@ const forecasts = require('../media/forecast.js');
 const chartGraphs = require('../media/chart-series.js');
 const billing = require('./billing.cjs');
 const {PatternBook} = require('./pattern-book.cjs');
+const {ForecastRecord} = require('./forecast-record.cjs');
 const {migrateLegacyStorage} = require('./storage-migration.cjs');
 const forecastLearning = require('./forecast-learning.cjs');
 const adapters = require('./adapters.cjs');
@@ -49,6 +50,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   const diagnostics = new Diagnostics(store.dir, cfg().get('diagnosticsEnabled', true));
   const pending = new ObservationQueue(store.dir);
   const patternBook = new PatternBook(store.dir);
+  const forecastRecord = new ForecastRecord(store.dir);
   let learnedForecast, learnedStamp, forecastInput, forecastRunning;
   const learnedFile = path.join(store.dir, 'forecast-learning.json');
   const sessionIndex = new SessionIndex({dir: store.dir, retentionDays: cfg().get('retentionDays')});
@@ -119,7 +121,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
       learnedForecast = value; learnedStamp = stamp;
     } catch {}
   }
-  await loadMeta(); await loadAutomatic(); await patternBook.load(); await loadLearnedForecast();
+  await loadMeta(); await loadAutomatic(); await patternBook.load(); await forecastRecord.load(); await loadLearnedForecast();
   let antigravityAvailable = false;
   async function detectAntigravity() {
     antigravityAvailable = Boolean(vscode.extensions.getExtension('google.google-antigravity'));
@@ -202,14 +204,16 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   }
   function payload() {
     const now = Date.now(), data = {}; let firstObserved = now;
-    const live = projected(), projection = historyProjection?.data || live;
+    const live = projected(), projection = historyProjection?.data || live, recording = cfg().get('forecastEnabled', true);
+    // 예상 사용량 기록: 화면이 열려 있는 동안 갱신마다 스냅샷 간격을 확인해 남긴다.
+    if (recording && forecastRecord.record(live, now)) forecastRecord.save().catch(() => {});
     for (const id of Object.keys(projection)) {
       const p = projection[id], last = p.last;
       if (p.first !== undefined) firstObserved = Math.min(firstObserved, p.first);
       data[id] = {...p, ...(live[id]?.forecast ? {forecast: live[id].forecast} : {}), status: metadata.collectors[collectorId(id)]};
 
     }
-    return {type: 'data', now, firstObserved, data, historyArchive: !!store.archive, historyHasMore: !!store.archive && (!historyProjection || Number.isFinite(historyProjection.first) && historyProjection.first < firstObserved), historySelection, visibility: displayConfig(), creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), antigravitySmoothingMinutes: chartGraphs.smoothing(cfg().get('antigravitySmoothingMinutes', 5)), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, theme: vscode.window.activeColorTheme.kind, count: historyProjection?.count ?? records.length};
+    return {type: 'data', now, firstObserved, data, historyArchive: !!store.archive, historyHasMore: !!store.archive && (!historyProjection || Number.isFinite(historyProjection.first) && historyProjection.first < firstObserved), historySelection, visibility: displayConfig(), creditBasis: cfg().get('creditBasis', 'subscription'), forecastEnabled: cfg().get('forecastEnabled', true), forecastRecord: recording ? forecastRecord.view(now) : {}, colorMode: cfg().get('colorMode', 'system'), tooltipTransparency: cfg().get('tooltipTransparency', 14), pageWidth: cfg().get('pageWidth', 1440), pageHeight: cfg().get('pageHeight', 0), chartHistoryDays: cfg().get('chartHistoryDays', 7), antigravitySmoothingMinutes: chartGraphs.smoothing(cfg().get('antigravitySmoothingMinutes', 5)), codexCreditDecimals: cfg().get('codexCreditDecimals', 4), claudeUsdDecimals: cfg().get('claudeUsdDecimals', 4), intervalSeconds: cfg().get('intervalSeconds'), staleAfterMs: staleAfterMs(), diagnosticsEnabled: cfg().get('diagnosticsEnabled', true), analysisEnabled: cfg().get('analysisEnabled', true), detailsEnabled: true, host: vscode.env.remoteName || process.platform, theme: vscode.window.activeColorTheme.kind, count: historyProjection?.count ?? records.length};
   }
   function sendView() {
     if (historyFrom === null) return deliverView();
@@ -302,6 +306,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         metadata.analysisActivity = Object.fromEntries(['codex', 'claude'].map(id => [id, {active: analysisData.activity?.[id]?.active === true, lastActivity: Number.isFinite(analysisData.activity?.[id]?.lastActivity) ? analysisData.activity[id].lastActivity : null, complete: analysisData.coverage?.[id]?.partial !== true && analysisData.coverage?.[id]?.cacheWriteFailed !== true}]));
         await saveMeta();
         if (!unfocused() && cfg().get('forecastEnabled', true) && forecastConfig().patternDays > 0) {projected(); await patternBook.save().catch(() => {});}
+        if (!unfocused() && cfg().get('forecastEnabled', true)) {forecastRecord.record(projected()); await forecastRecord.save().catch(() => {});}
         await diagnostics.save().catch(() => {});
         return changed;
       });

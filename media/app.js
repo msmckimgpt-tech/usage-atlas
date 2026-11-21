@@ -11,7 +11,7 @@
   const colors = {codex: 'var(--ua-a)', claude: 'var(--ua-b)'};
   const week = 7 * 86400000, minSpan = 60000;
   const providerVisibility = globalThis.usageAtlasProviderVisibility;
-  const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, range: null, details: null};
+  const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, paceRecord: false, range: null, details: null};
   let state = {...defaults}, model = {now: Date.now(), data: {}}, raf, view, gesture = null, chartDrag = null, historyBusy = false;
   const initialNode = document.getElementById('ua-initial-data');
   if (initialNode) {const initial = JSON.parse(initialNode.textContent); if (initial?.type === 'data' && initial.data && Number.isFinite(initial.now)) model = initial; initialNode.remove();}
@@ -20,7 +20,7 @@
   const saved = api.getState();
   if ([3, 4, 5, 6].includes(saved?.version)) {
     for (const [key, values] of Object.entries({mode: ['usage', 'delta', 'total'], basis: ['current', 'base'], theme: ['system', 'light', 'dark'], creditMode: ['money', 'estimate']})) if (values.includes(saved[key])) state[key] = saved[key];
-    for (const key of ['credit', 'refs']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
+    for (const key of ['credit', 'refs', 'paceRecord']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
     if (Array.isArray(saved.range) && saved.range.length === 2 && saved.range.every(Number.isFinite) && saved.range[0] < saved.range[1]) state.range = [...saved.range];
     if (Number.isSafeInteger(saved.historyVersion) && saved.historyVersion >= 0) state.historyVersion = saved.historyVersion;
     if (saved.details && typeof saved.details === 'object' && saved.details.open === true && saved.details.selection && typeof saved.details.selection === 'object') state.details = saved.details;
@@ -30,6 +30,9 @@
   state.creditBasis = ['subscription', 'billing'].includes(model.creditBasis) ? model.creditBasis : defaults.creditBasis;
   let basisPending = null;
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
+  // 예측 기록은 원단위 사용률로 저장하므로 같은 축을 쓰는 사용률 보기에서만 겹쳐 그릴 수 있다.
+  const recordUsable = () => state.mode === 'usage' && !(state.credit && displayCreditMode() === 'estimate');
+  const recordTitle = count => !recordUsable() ? '예측 기록은 사용률 보기에서 표시합니다. 추가 크레딧을 사용량에 누적하는 보기에서는 표시하지 않습니다.' : state.paceRecord && !count ? '표시 구간에 지나간 예측 기록이 아직 없습니다. 5시간 창은 1시간, 주간 창은 6시간마다 기록합니다.' : '지나간 시간의 예상 사용량 기록을 실제 사용량 위에 겹쳐 비교합니다.' + (state.paceRecord ? ' 표시 중 ' + count + '개.' : '');
   let hoveredProvider = null, emphasizedTarget = null, hoverPosition = null, lastEmphasizedSeries = null;
   let lastTipKey = '', tipW = 0, tipH = 0;
   // 기호 경로 문자열은 모양·크기마다 한 번만 만든다. 위치는 transform으로 옮긴다.
@@ -224,6 +227,8 @@
     root.dataset.creditBasis = state.creditBasis;
     root.dataset.creditMode = state.credit ? displayCreditMode() : 'off';
     el('refs').disabled = state.basis !== 'base' || state.mode === 'delta';
+    el('pace-record').setAttribute('aria-pressed', String(state.paceRecord)); el('pace-record').hidden = model.forecastEnabled === false;
+    el('pace-record').setAttribute('aria-disabled', String(!recordUsable()));
     state.theme = model.colorMode || 'system';
     root.style.setProperty('--ua-tooltip-opacity', (100 - (number(model.tooltipTransparency) ? Math.max(0, Math.min(100, model.tooltipTransparency)) : 14)) + '%');
     for (const [key, fallback, automatic] of [
@@ -314,8 +319,11 @@
       }
       return {id, w, ...curve};
     })).filter(s => s && s.points.at(-1).time >= domain[0] && s.points[0].time <= domain[1]);
+    // 예측 기록: 지나간 시간의 과거 예측선을 실제 사용량 위에 겹친다. 사용률 보기에서만 같은 축으로 비교할 수 있다.
+    const recordTrends = state.paceRecord && model.forecastEnabled !== false && recordUsable() ? visible.flatMap(id => ['five', 'week'].flatMap(w => forecasts.recorded(model.forecastRecord?.[id]?.[w], {now: model.now, domain, basis: state.basis}).map(line => ({id, w, known: line.known, at: line.at, points: line.points.map((p, i) => ({...p, continuous: i > 0}))})))) : [];
     const rangeExtents = forecastTrends.flatMap(s => ['low','high'].map(field => ({...s, points: (s.range || []).map((p,i)=>({time:p.time,y:p[field],continuous:i>0}))})));
-    const plotted = [...data, ...nativeData.filter(s => !s.billing), ...forecastTrends, ...rangeExtents];
+    el('pace-record').title = recordTitle(recordTrends.length); el('pace-record').dataset.recordCount = recordTrends.length;
+    const plotted = [...data, ...nativeData.filter(s => !s.billing), ...forecastTrends, ...rangeExtents, ...recordTrends];
     const {rawTotal, split, refs, maximum, unscaledMaximum} = chartGraphs.limits(plotted, domain, state);
     const units = [...new Set(nativeCredits.map(creditUnit))];
     const y = d3.scaleLinear().domain([0, maximum]).range([bottom, top]);
@@ -457,6 +465,12 @@
       const curve = forecastTrendMap.get(p.id + '-' + p.w);
       return curve ? scale(curve)(curve.points.at(-1).y) : Math.min(bottom - 6, top + 40 + (p.w === 'week' ? 14 : 0));
     };
+    const recordGroups = new Map();
+    for (const s of recordTrends) {const group = s.id + '-' + s.w + '-' + (split && !s.known ? 'raw' : 'scaled'); if (!recordGroups.has(group)) recordGroups.set(group, []); recordGroups.get(group).push(s);}
+    for (const [group, lines] of recordGroups) {
+      const s = lines[0], ys = scale(s), key = s.id + '-' + s.w, lineGen = d3.line().x(p => x(p.time)).y(p => ys(p.y));
+      addTrace(g.append('path').attr('data-forecast-record', key).attr('data-record-group', group).attr('data-record-count', lines.length).attr('d', lines.map(line => lineGen(line.points)).join('')).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', 1.3).attr('stroke-dasharray', s.w === 'week' ? '4 2 1 2' : '1 2').attr('opacity', .8).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('pointer-events', 'none').attr('aria-hidden', 'true'), key, s.id, false, .8);
+    }
     for (const s of forecastTrends) {
       const ys = scale(s), a = s.points[0], b = s.points.at(-1), key = s.id + '-' + s.w;
       if (s.range?.length > 1) {const points = [...s.range.map(p=>[x(p.time),ys(p.high)]), ...s.range.slice().reverse().map(p=>[x(p.time),ys(p.low)])]; addTrace(g.append('path').datum(s.range).attr('data-forecast-range',key).attr('d','M'+points.map(p=>p.join(',')).join('L')+'Z').attr('fill',colors[s.id]).attr('opacity',.09).attr('stroke','none').attr('role','img').attr('aria-label',names[s.id]+' '+labels[s.w]+' 과거 예측 오차 범위. 신뢰구간이 아닙니다.'), key, s.id, false, .09);}
@@ -733,6 +747,7 @@
   }
   for (const key of ['mode', 'basis']) el(key).addEventListener('change', () => {state[key] = el(key).value; save(); requestDraw();});
   for (const key of ['credit', 'refs']) el(key).addEventListener('change', () => {state[key] = el(key).checked; save(); requestDraw();});
+  el('pace-record').addEventListener('click', () => {state.paceRecord = !state.paceRecord; save(); requestDraw();});
   for (const basis of ['subscription', 'billing']) el('credit-' + basis).addEventListener('change', event => {if (!event.target.checked) return; state.creditBasis = basis; basisPending = basis; save(); api.postMessage({type: 'creditBasis', value: basis}); requestDraw();});
   el('credit-mode').addEventListener('change', () => {state.creditMode = el('credit-mode').value; save(); requestDraw();});
   function bindProvider(id) {

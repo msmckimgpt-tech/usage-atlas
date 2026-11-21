@@ -330,5 +330,27 @@
     }
     return {known, endKind: status.state === 'predicted' ? 'exhaustion' : 'reset', range, points: raw.map((p, i) => ({...p, y: project(p.value), continuous: i > 0, estimated: true}))};
   }
-  return {revision: 3, settings, estimate, accountStart, denoise, provider, present, remaining, summary, curve};
+  // 기록된 과거 예측 스냅샷 중 이미 지나간 구간만 잘라 실제 사용량과 겹쳐 볼 선으로 만든다.
+  // 스냅샷 값은 당시 현재 한도 기준 사용률(%)이며, 기본 요금제 기준은 당시 배율로 환산한다.
+  function recorded(snapshots, {now, domain, basis = 'current'} = {}) {
+    if (!Array.isArray(snapshots) || !finite(now)) return [];
+    const lines = [];
+    for (const snap of snapshots) {
+      if (!snap || !finite(snap.at) || snap.at >= now || !Array.isArray(snap.points)) continue;
+      const factor = basis === 'base' && finite(snap.mult) && snap.mult > 0 ? snap.mult : 1, limit = Math.min(now, finite(snap.reset) ? snap.reset : now), out = [];
+      for (let i = 0; i < snap.points.length; i++) {
+        const [time, value] = snap.points[i] || [];
+        if (!finite(time) || !finite(value) || value < 0 || value > 100 || out.length && time <= out.at(-1).time) {out.length = 0; break;}
+        if (time <= limit) {out.push({time, value, y: value * factor}); continue;}
+        const prev = out.at(-1);
+        if (prev) {const v = prev.value + (value - prev.value) * (limit - prev.time) / (time - prev.time); out.push({time: limit, value: v, y: v * factor});}
+        break;
+      }
+      if (out.length < 2 || out.at(-1).time <= out[0].time) continue;
+      if (Array.isArray(domain) && (out.at(-1).time < domain[0] || out[0].time > domain[1])) continue;
+      lines.push({at: snap.at, reset: snap.reset, known: basis !== 'base' || factor !== 1 || snap.mult === 1, points: out});
+    }
+    return lines;
+  }
+  return {revision: 3, settings, estimate, accountStart, denoise, provider, present, remaining, summary, curve, recorded};
 });

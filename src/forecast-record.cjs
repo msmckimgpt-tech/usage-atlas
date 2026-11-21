@@ -7,7 +7,8 @@ const forecasts = require('../media/forecast.js');
 
 const minute = 60000, hour = 60 * minute, day = 24 * hour;
 // 5시간 창은 1시간마다(주기당 최대 5개), 주간 창은 6시간마다(주기당 최대 28개) 남긴다.
-const policy = {five: {every: hour, keep: 7 * day}, week: {every: 6 * hour, keep: 21 * day}};
+// span: 창 길이(초기화 시각 - span = 주기 시작). lead: 주기 시작 뒤 이 시간이 지나면 화면의 기준 예측이 될 스냅샷을 한 번 더 남긴다.
+const policy = {five: {every: hour, keep: 7 * day, span: 5 * hour, lead: 30 * minute}, week: {every: 6 * hour, keep: 21 * day, span: 7 * day, lead: 6 * hour}};
 // minGap: 같은 키를 이보다 짧게 다시 남기지 않는다. fresh: 이보다 오래된 관측은 예측 시점을 흐리므로 남기지 않는다.
 const maxPoints = 24, maxSnapshots = 400, maxBytes = 2 * 1024 * 1024, minGap = 10 * minute, fresh = 15 * minute;
 const finite = n => typeof n === 'number' && Number.isFinite(n);
@@ -35,17 +36,21 @@ function sanitize(value) {
   for (const [key, list] of Object.entries(value.entries)) if (keyPattern.test(key) && Array.isArray(list)) entries[key] = list.filter(validSnapshot).map(s => ({at: s.at, reset: s.reset, mult: s.mult, end: s.end === 'exhaustion' ? 'exhaustion' : 'reset', points: s.points}));
   return entries;
 }
-// 새 주기: 이전 주기의 초기화 시각이 지났거나 예정 초기화가 간격 이상 뒤로 옮겨졌을 때. 작은 흔들림은 같은 주기로 본다.
-function due(prev, at, reset, window) {
+// 새 주기 판정은 화면의 기준 예측(forecasts.cycleBreak)과 같은 규칙을 쓴다.
+// 같은 주기에서 기준 예측 시점(lead)을 처음 넘긴 스냅샷은 간격·최소 간격과 무관하게 남긴다(주기당 한 번).
+// 주기 시작은 초기화 시각 - 창 길이로 본다. 첫 사용 때 시작하는 창도 초기화가 시작 + 창 길이로 정해지므로 같은 값이다.
+function due(prev, s, window) {
   if (!prev) return true;
-  const gap = at - prev.at, every = policy[window].every;
+  const gap = s.at - prev.at, {every, span, lead} = policy[window], start = s.reset - span;
+  const breaks = forecasts.cycleBreak(prev, s, every);
+  if (!breaks && prev.at - start < lead && s.at - start >= lead) return true;
   if (gap < minGap) return false;
-  return gap >= every || at >= prev.reset || reset - prev.reset >= every;
+  return gap >= every || breaks;
 }
 // 여러 창이 따로 남긴 스냅샷을 합친 뒤에도 같은 간격 규칙만 남도록 앞에서부터 거른다.
 function thin(list, window) {
   const out = [];
-  for (const s of list) if (due(out.at(-1), s.at, s.reset, window)) out.push(s);
+  for (const s of list) if (due(out.at(-1), s, window)) out.push(s);
   return out;
 }
 function merge(a, b) {
@@ -74,9 +79,8 @@ function record(entries, data, now) {
       const value = provider?.forecast?.[window], last = provider?.windows?.[window]?.at(-1);
       if (!value || !last || !finite(value.observedAt) || !finite(value.reset) || now - value.observedAt > fresh || value.observedAt > now + minute) continue;
       const key = id + ':' + window, list = entries[key] || [], prev = list.at(-1);
-      if (!due(prev, value.observedAt, value.reset, window)) continue;
       const snap = snapshot(value, last, now);
-      if (!snap) continue;
+      if (!snap || !due(prev, snap, window)) continue;
       list.push(snap); entries[key] = list; changed = true;
     }
   }

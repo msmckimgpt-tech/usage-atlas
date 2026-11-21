@@ -330,27 +330,52 @@
     }
     return {known, endKind: status.state === 'predicted' ? 'exhaustion' : 'reset', range, points: raw.map((p, i) => ({...p, y: project(p.value), continuous: i > 0, estimated: true}))};
   }
-  // 기록된 과거 예측 스냅샷 중 이미 지나간 구간만 잘라 실제 사용량과 겹쳐 볼 선으로 만든다.
-  // 스냅샷 값은 당시 현재 한도 기준 사용률(%)이며, 기본 요금제 기준은 당시 배율로 환산한다.
-  function recorded(snapshots, {now, domain, basis = 'current'} = {}) {
-    if (!Array.isArray(snapshots) || !finite(now)) return [];
+  // 주기별 기준 예측: 기록된 예측 스냅샷을 주기로 묶고, 주기 시작 뒤 lead 가 지난 첫 스냅샷 하나를 그 주기 전체에 걸쳐 그린다.
+  // 매번 새로 고친 예측은 실제 값에서 출발해 실제선과 겹쳐 보이므로, 고정된 예측 하나와 실제 소진 모양을 비교하게 한다.
+  // 값은 당시 현재 한도 기준 사용률(%)이며, 기본 요금제 기준은 당시 배율로 환산한다. past 는 지금까지, future 는 지금 이후 구간이다.
+  // 주기 시작은 초기화 시각 - 창 길이로 본다(첫 사용 때 시작하는 창도 초기화가 시작 + 창 길이로 정해진다).
+  const baselineWindows = {five: {span: 5 * hour, lead: 30 * minute, every: hour}, week: {span: 7 * day, lead: 6 * hour, every: 6 * hour}};
+  // 직전 스냅샷 대비 새 주기인가: 이전 초기화가 지났거나, 초기화가 간격 이상 뒤로 옮겨졌거나(작은 흔들림은 같은 주기),
+  // 출발 사용률이 1%p 넘게 줄었을 때(같은 주기에서 사용률은 줄지 않으므로 조기 초기화). 기록기와 화면이 함께 쓴다.
+  function cycleBreak(prev, snap, every) {
+    const startOf = s => Array.isArray(s.points) && Array.isArray(s.points[0]) && finite(s.points[0][1]) ? s.points[0][1] : null;
+    const a = startOf(prev), b = startOf(snap);
+    return snap.at >= prev.reset || snap.reset - prev.reset >= every || a !== null && b !== null && b < a - 1;
+  }
+  function baseline(snapshots, {now, domain, basis = 'current', window = 'five'} = {}) {
+    const rule = baselineWindows[window];
+    if (!Array.isArray(snapshots) || !finite(now) || !rule) return [];
+    const valid = snapshots.filter(snap => snap && finite(snap.at) && finite(snap.reset) && snap.reset > snap.at && Array.isArray(snap.points) && snap.points.length >= 2
+      && snap.points.every((p, i) => Array.isArray(p) && finite(p[0]) && finite(p[1]) && p[1] >= 0 && p[1] <= 100 && (i === 0 || p[0] > snap.points[i - 1][0]))).sort((a, b) => a.at - b.at);
+    const cycles = [];
+    for (const snap of valid) {
+      const cycle = cycles.at(-1);
+      if (!cycle || cycleBreak(cycle.list.at(-1), snap, rule.every)) cycles.push({list: [snap]}); else cycle.list.push(snap);
+    }
     const lines = [];
-    for (const snap of snapshots) {
-      if (!snap || !finite(snap.at) || snap.at >= now || !Array.isArray(snap.points)) continue;
-      const factor = basis === 'base' && finite(snap.mult) && snap.mult > 0 ? snap.mult : 1, limit = Math.min(now, finite(snap.reset) ? snap.reset : now), out = [];
-      for (let i = 0; i < snap.points.length; i++) {
-        const [time, value] = snap.points[i] || [];
-        if (!finite(time) || !finite(value) || value < 0 || value > 100 || out.length && time <= out.at(-1).time) {out.length = 0; break;}
-        if (time <= limit) {out.push({time, value, y: value * factor}); continue;}
-        const prev = out.at(-1);
-        if (prev) {const v = prev.value + (value - prev.value) * (limit - prev.time) / (time - prev.time); out.push({time: limit, value: v, y: v * factor});}
+    for (const [index, cycle] of cycles.entries()) {
+      const snap = cycle.list.find(s => s.at - (s.reset - rule.span) >= rule.lead);
+      if (!snap || snap.at >= now) continue;
+      // 다음 주기가 예정보다 일찍 시작했으면 그 시작에서 끊는다.
+      const end = Math.min(snap.reset, cycles[index + 1]?.list[0].at ?? Infinity);
+      const factor = basis === 'base' && finite(snap.mult) && snap.mult > 0 ? snap.mult : 1, point = (time, value) => ({time, value, y: value * factor});
+      const full = [];
+      for (const [time, value] of snap.points) {
+        if (time <= end) {full.push(point(time, value)); continue;}
+        const prev = full.at(-1);
+        if (prev) full.push(point(end, prev.value + (value - prev.value) * (end - prev.time) / (time - prev.time)));
         break;
       }
-      if (out.length < 2 || out.at(-1).time <= out[0].time) continue;
-      if (Array.isArray(domain) && (out.at(-1).time < domain[0] || out[0].time > domain[1])) continue;
-      lines.push({at: snap.at, reset: snap.reset, known: basis !== 'base' || factor !== 1 || snap.mult === 1, points: out});
+      if (full.length < 2) continue;
+      if (Array.isArray(domain) && (full.at(-1).time < domain[0] || full[0].time > domain[1])) continue;
+      const past = full.filter(p => p.time <= now), future = full.filter(p => p.time >= now), cut = full.findIndex(p => p.time > now);
+      if (cut > 0 && full[cut - 1].time < now) {
+        const a = full[cut - 1], b = full[cut], v = a.value + (b.value - a.value) * (now - a.time) / (b.time - a.time);
+        past.push(point(now, v)); future.unshift(point(now, v));
+      }
+      lines.push({at: snap.at, reset: snap.reset, start: snap.reset - rule.span, known: basis !== 'base' || factor !== 1 || snap.mult === 1, past: past.length >= 2 ? past : [], future: future.length >= 2 ? future : []});
     }
     return lines;
   }
-  return {revision: 3, settings, estimate, accountStart, denoise, provider, present, remaining, summary, curve, recorded};
+  return {revision: 3, settings, estimate, accountStart, denoise, provider, present, remaining, summary, curve, baseline, cycleBreak};
 });

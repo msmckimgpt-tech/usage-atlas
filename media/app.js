@@ -32,7 +32,7 @@
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
   // 예측 기록은 원단위 사용률로 저장하므로 같은 축을 쓰는 사용률 보기에서만 겹쳐 그릴 수 있다.
   const recordUsable = () => state.mode === 'usage' && !(state.credit && displayCreditMode() === 'estimate');
-  const recordTitle = count => !recordUsable() ? '예측 기록은 사용률 보기에서 표시합니다. 추가 크레딧을 사용량에 누적하는 보기에서는 표시하지 않습니다.' : state.paceRecord && !count ? '표시 구간에 지나간 예측 기록이 아직 없습니다. 5시간 창은 1시간, 주간 창은 6시간마다 기록합니다.' : '지나간 시간의 예상 사용량 기록을 실제 사용량 위에 겹쳐 비교합니다.' + (state.paceRecord ? ' 표시 중 ' + count + '개.' : '');
+  const recordTitle = count => !recordUsable() ? '예측 기록은 사용률 보기에서 표시합니다. 추가 크레딧을 사용량에 누적하는 보기에서는 표시하지 않습니다.' : state.paceRecord && !count ? '표시 구간에 기준 예측이 아직 없습니다. 5시간 창은 주기 시작 30분 뒤, 주간 창은 6시간 뒤의 예측을 기준으로 남깁니다.' : '주기마다 하나로 고정한 기준 예측(5시간 창은 주기 시작 30분 뒤, 주간 창은 6시간 뒤의 예측)을 실제 사용량 위에 겹쳐 소진 모양을 비교합니다.' + (state.paceRecord ? ' 표시 중 ' + count + '개.' : '');
   let hoveredProvider = null, emphasizedTarget = null, hoverPosition = null, lastEmphasizedSeries = null;
   let lastTipKey = '', tipW = 0, tipH = 0;
   // 기호 경로 문자열은 모양·크기마다 한 번만 만든다. 위치는 transform으로 옮긴다.
@@ -320,10 +320,11 @@
       return {id, w, ...curve};
     })).filter(s => s && s.points.at(-1).time >= domain[0] && s.points[0].time <= domain[1]);
     // 예측 기록: 지나간 시간의 과거 예측선을 실제 사용량 위에 겹친다. 사용률 보기에서만 같은 축으로 비교할 수 있다.
-    const recordTrends = state.paceRecord && model.forecastEnabled !== false && recordUsable() ? visible.flatMap(id => ['five', 'week'].flatMap(w => forecasts.recorded(model.forecastRecord?.[id]?.[w], {now: model.now, domain, basis: state.basis}).map(line => ({id, w, known: line.known, at: line.at, points: line.points.map((p, i) => ({...p, continuous: i > 0}))})))) : [];
+    const recordLines = state.paceRecord && model.forecastEnabled !== false && recordUsable() ? visible.flatMap(id => ['five', 'week'].flatMap(w => forecasts.baseline(model.forecastRecord?.[id]?.[w], {now: model.now, domain, basis: state.basis, window: w}).map(line => ({id, w, ...line})))) : [];
+    const recordTrends = recordLines.flatMap(line => ['past', 'future'].filter(part => line[part].length).map(part => ({id: line.id, w: line.w, known: line.known, at: line.at, part, points: line[part].map((p, i) => ({...p, continuous: i > 0}))})));
     const rangeExtents = forecastTrends.flatMap(s => ['low','high'].map(field => ({...s, points: (s.range || []).map((p,i)=>({time:p.time,y:p[field],continuous:i>0}))})));
-    el('pace-record').title = recordTitle(recordTrends.length); el('pace-record').dataset.recordCount = recordTrends.length;
-    const plotted = [...data, ...nativeData.filter(s => !s.billing), ...forecastTrends, ...rangeExtents, ...recordTrends];
+    el('pace-record').title = recordTitle(recordLines.length); el('pace-record').dataset.recordCount = recordLines.length;
+    const plotted = [...data, ...nativeData.filter(s => !s.billing), ...forecastTrends, ...rangeExtents, ...recordTrends.filter(s => s.part === 'past')];
     const {rawTotal, split, refs, maximum, unscaledMaximum} = chartGraphs.limits(plotted, domain, state);
     const units = [...new Set(nativeCredits.map(creditUnit))];
     const y = d3.scaleLinear().domain([0, maximum]).range([bottom, top]);
@@ -466,10 +467,13 @@
       return curve ? scale(curve)(curve.points.at(-1).y) : Math.min(bottom - 6, top + 40 + (p.w === 'week' ? 14 : 0));
     };
     const recordGroups = new Map();
-    for (const s of recordTrends) {const group = s.id + '-' + s.w + '-' + (split && !s.known ? 'raw' : 'scaled'); if (!recordGroups.has(group)) recordGroups.set(group, []); recordGroups.get(group).push(s);}
+    for (const s of recordTrends) {const group = s.id + '-' + s.w + '-' + (split && !s.known ? 'raw' : 'scaled') + '-' + s.part; if (!recordGroups.has(group)) recordGroups.set(group, []); recordGroups.get(group).push(s);}
     for (const [group, lines] of recordGroups) {
-      const s = lines[0], ys = scale(s), key = s.id + '-' + s.w, lineGen = d3.line().x(p => x(p.time)).y(p => ys(p.y));
-      addTrace(g.append('path').attr('data-forecast-record', key).attr('data-record-group', group).attr('data-record-count', lines.length).attr('d', lines.map(line => lineGen(line.points)).join('')).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', 1.3).attr('stroke-dasharray', s.w === 'week' ? '4 2 1 2' : '1 2').attr('opacity', .8).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('pointer-events', 'none').attr('aria-hidden', 'true'), key, s.id, false, .8);
+      // 지나간 구간은 실제선과 비교할 수 있게 진하게, 지금 이후 구간은 남은 예상 모양만 흐리게 그린다.
+      const s = lines[0], ys = scale(s), key = s.id + '-' + s.w, lineGen = d3.line().x(p => x(p.time)).y(p => ys(p.y)), op = s.part === 'past' ? .8 : .35;
+      addTrace(g.append('path').attr('data-forecast-record', key).attr('data-record-group', group).attr('data-record-part', s.part).attr('data-record-count', lines.length).attr('d', lines.map(line => lineGen(line.points)).join('')).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', 1.3).attr('stroke-dasharray', s.w === 'week' ? '4 2 1 2' : '1 2').attr('opacity', op).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('pointer-events', 'none').attr('aria-hidden', 'true'), key, s.id, false, op);
+      // 기준 예측을 만든 시점을 작은 점으로 표시한다.
+      if (s.part === 'past') for (const line of lines) {const p = line.points[0]; if (p.time >= domain[0] && p.time <= domain[1]) addTrace(g.append('circle').attr('data-record-anchor', key).attr('data-record-at', p.time).attr('cx', x(p.time)).attr('cy', ys(p.y)).attr('r', 2.5).attr('fill', colors[s.id]).attr('opacity', .8).attr('pointer-events', 'none').attr('aria-hidden', 'true'), key, s.id, false, .8);}
     }
     for (const s of forecastTrends) {
       const ys = scale(s), a = s.points[0], b = s.points.at(-1), key = s.id + '-' + s.w;

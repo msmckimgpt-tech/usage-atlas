@@ -29,14 +29,14 @@ const report = {
   , diagnostics: {enabled: true, summary: {samples: 3, lastMs: 8, meanMs: 9, p95Ms: 10, cpuMs: 4, rssMiB: 50, heapMiB: 10}, note: 'Usage Atlas 확장 호스트 프로세스 측정입니다.', events: [{time: now, stage: 'query', elapsedMs: 8, cpuMs: 4, rssMiB: 50, outcome: 'success'}]}
   , provenance: {catalogVersion: 'test-1', priceVerifiedAt: '2026-10-22', sources: [{title: '공식 가격표', url: 'https://example.test/pricing'}], notes: ['API 환산 추정액입니다.']}
 };
-const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.messages=[];window.acquireVsCodeApi=()=>({getState:()=>null,setState:()=>{},postMessage:value=>window.messages.push(value)});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'details.js', 'provider-visibility.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
+const doc = initialState => `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>${read('style.css')}</style></head><body>${read('body.html')}<script>window.messages=[];window.savedState=${JSON.stringify(initialState ?? null).replace(/</g, '\\u003c')};window.acquireVsCodeApi=()=>({getState:()=>window.savedState,setState:value=>{window.savedState=value;},postMessage:value=>window.messages.push(value)});</script>${['d3.min.js', 'gaps.js', 'time-axis.js', 'amount-format.js', 'credit-series.js', 'chart-series.js', 'forecast.js', 'details.js', 'provider-visibility.js', 'app.js'].map(file => `<script>${read(file)}</script>`).join('')}</body></html>`;
 (async () => {
   const browser = await chromium.launch(browserOptions);
   const errors = [], passed = [];
   try {
     const page = await browser.newPage({viewport: {width: 1440, height: 900}, timezoneId: 'Asia/Seoul'});
     page.on('pageerror', error => errors.push(error.message));
-    await page.setContent(doc);
+    await page.setContent(doc());
     const frame = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const send = data => page.evaluate(data => window.dispatchEvent(new MessageEvent('message', {data})), data);
     const update = async extra => {await send({...model, ...extra}); await frame();};
@@ -312,7 +312,114 @@ const doc = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>$
     await send({type: 'conversation', requestId: (await last()).requestId, data: {items: [{role: 'user', time: start - 1000, text: '이전 질문', context: true}], next: null}});
     assert.equal(await articles.count(), 1); assert.equal(await page.getByRole('button', {name: '이전 대화', exact: true}).isDisabled(), true);
     await page.getByRole('button', {name: '최신 대화', exact: true}).click(); assert.equal((await last()).cursor, null);
+    await send({type: 'conversation', requestId: (await last()).requestId, data: transcript});
+    // 다른 모달 탭(사용 보고서·수집 범위) 및 필터 변경 후 돌아와도 불러온 대화가 유지된다.
+    await page.locator('#ua-tab-report').click();
+    assert.equal(await page.locator('#ua-tab-conversation .ua-tab-badge').textContent(), '1');
+    await page.locator('select[name="model"]').selectOption('model-a');
+    await reply(newestReport);
+    await page.locator('#ua-tab-coverage').click();
+    await page.locator('#ua-tab-conversation').click();
+    assert.equal(await articles.count(), 2, 'conversation survives modal tab trips and report filter refreshes');
+    assert.equal(await articles.first().locator('pre').textContent(), '작업 결과');
+    // 두 번째 세션 대화 보기를 열어도 이전 세션 대화가 트레이에 함께 보존된다.
+    await page.locator('#ua-tab-report').click();
+    await page.locator('#ua-details-filter-reset').click(); await reply(newestReport);
+    await sessionTable.getByRole('button', {name: '대화 보기', exact: true}).last().click();
+    const secondConvReq = await last(); assert.equal(secondConvReq.conversationSessionId, 's1');
+    await send({type: 'conversation', requestId: secondConvReq.requestId, data: {items: [{role: 'user', time: start, text: '첫 세션 질문'}], next: null}});
+    assert.equal(await page.locator('.ua-conversation-chip').count(), 2, 'both opened conversations stay in tray');
+    assert.equal(await articles.first().locator('pre').textContent(), '첫 세션 질문');
+    await page.locator('.ua-conversation-pick').filter({hasText: 's2'}).click();
+    assert.equal(await articles.first().locator('pre').textContent(), '작업 결과', 'switching back in tray restores earlier session transcript immediately');
+    // VS Code 편집기 탭 전환(Webview 재생성 + api.getState 복원) 시 상세 모달과 대화가 복원되고 본문은 저장되지 않는다.
+    const persisted = await page.evaluate(() => window.savedState);
+    assert.equal(persisted?.details?.open, true);
+    assert.equal(persisted?.details?.tab, 'conversation');
+    assert.equal(JSON.stringify(persisted).includes('작업 결과'), false, 'raw transcript text is never written to api.setState');
+    assert.equal(JSON.stringify(persisted).includes('첫 세션 질문'), false);
+    const resumedPage = await browser.newPage({viewport: {width: 1440, height: 900}, timezoneId: 'Asia/Seoul'});
+    resumedPage.on('pageerror', error => errors.push(error.message));
+    await resumedPage.setContent(doc(persisted));
+    assert.equal(await resumedPage.locator('#ua-details').isVisible(), true, 'detail modal stays open across VS Code tab switch');
+    assert.equal(await resumedPage.locator('#ua-tab-conversation').getAttribute('aria-selected'), 'true');
+    assert.equal(await resumedPage.locator('.ua-conversation-chip').count(), 2, 'conversation session tray survives VS Code tab switch');
+    const resumedMsgs = await resumedPage.evaluate(() => window.messages.filter(m => m.type !== 'ready'));
+    const resumedDetailsReq = resumedMsgs.find(m => m.type === 'details'), resumedConvReq = resumedMsgs.find(m => m.type === 'conversation');
+    assert.ok(resumedDetailsReq && resumedConvReq, 'resumed webview reloads both report and active conversation');
+    assert.equal(resumedConvReq.conversationSessionId, 's2');
+    await resumedPage.evaluate(({dReq, cReq, newestReport, transcript}) => {
+      window.dispatchEvent(new MessageEvent('message', {data: {type: 'details', requestId: dReq, data: newestReport}}));
+      window.dispatchEvent(new MessageEvent('message', {data: {type: 'conversation', requestId: cReq, data: transcript}}));
+    }, {dReq: resumedDetailsReq.requestId, cReq: resumedConvReq.requestId, newestReport, transcript});
+    assert.equal(await resumedPage.locator('.ua-conversation-message').first().locator('pre').textContent(), '작업 결과');
+    await resumedPage.close();
+    // 프로젝트별 GitHub Contribution 스타일 히트맵, 지표 전환, 클릭 필터, 대량 행 세로 압축 검증
+    await page.locator('#ua-tab-report').click();
+    const denseProjects = Array.from({length: 8}, (_, index) => {
+      const id = (index + 1).toString(16).padStart(64, '0');
+      return {
+        id
+      , project: id
+      , projectName: `서비스-${index + 1}`
+      , callCount: (8 - index) * 5
+      , pricedCallCount: (8 - index) * 5
+      , knownCostUsd: (8 - index) * 2.5
+      , costUsd: (8 - index) * 2.5
+      , tokens: (8 - index) * 120000
+      , buckets: Array.from({length: 28}, (__, b) => ({callCount: (b + index) % 4 === 0 ? index + 1 : 0, knownCostUsd: (b + index) % 4 === 0 ? (index + 1) * .4 : 0, tokens: (b + index) % 4 === 0 ? 30000 : 0}))
+      };
+    });
+    const denseReport = {
+      ...newestReport
+    , projectLabels: Object.fromEntries(denseProjects.map(p => [p.project, p.projectName]))
+    , projects: {
+        items: denseProjects
+      , totalCount: 8
+      , knownCount: 8
+      , limit: 50
+      , truncated: false
+      , start
+      , end
+      , bucketStepMs: Math.floor((end - start) / 28)
+      , bucketCount: 28
+      , totals: {callCount: 180, knownCostUsd: 90, tokens: 4320000}
+      , buckets: Array.from({length: 28}, (_, b) => ({start: start + b * 3600000, end: start + (b + 1) * 3600000, callCount: b % 2 ? 8 : 2, knownCostUsd: b % 2 ? 4 : 1, tokens: 150000}))
+      }
+    , sessions: bounded(Array.from({length: 50}, (_, i) => ({id: 'dense-s-' + i, sessionId: 'dense-s-' + i, homeKey: conversationHome, project: denseProjects[i % 8].project, projectName: denseProjects[i % 8].projectName, lastObservedAt: end - i * 1000, callCount: 4, knownCostUsd: 1.5, costUsd: 1.5, ownCostUsd: 1.2, descendantCostUsd: .3})))
+    , requests: bounded(Array.from({length: 50}, (_, i) => ({id: 'dense-r-' + i, turnId: 'dense-r-' + i, sessionId: 'dense-s-' + i, homeKey: conversationHome, project: denseProjects[i % 8].project, lastObservedAt: end - i * 1000, callCount: 2, knownCostUsd: .75, costUsd: .75})))
+    , calls: bounded(Array.from({length: 100}, (_, i) => ({id: 'dense-c-' + i, sessionId: 'dense-s-' + (i % 50), turnId: 'dense-r-' + (i % 50), homeKey: conversationHome, time: end - i * 500, model: 'model-a', effort: 'high', mode: 'Standard', project: denseProjects[i % 8].project, input: 10000, cached: 5000, output: 1000, costUsd: .5, matchState: 'matched'})))
+    , agents: bounded(Array.from({length: 50}, (_, i) => ({id: 'dense-a-' + i, sessionId: 'dense-s-' + i, project: denseProjects[i % 8].project, callCount: 4, ownCostUsd: 1.2, descendantCostUsd: .3})))
+    , diagnostics: {...report.diagnostics, events: Array.from({length: 50}, (_, i) => ({time: now - i * 1000, stage: 'query', elapsedMs: 8, cpuMs: 4, rssMiB: 50, outcome: 'success'}))}
+    };
+    await page.locator('#ua-details-filter-reset').click(); await reply(denseReport);
+    await update({diagnosticsEnabled: true}); await reply(denseReport);
+    const heatmap = page.locator('#ua-project-heatmap');
+    assert.equal(await heatmap.isVisible(), true);
+    assert.equal(await heatmap.locator('.ua-heatmap-row').count(), 7, 'overall row + top 6 projects shown initially');
+    assert.ok(await heatmap.locator('.ua-heat-cell[data-level="4"]').count() > 0, '5-level contribution cells rendered');
+    await heatmap.getByRole('button', {name: '전체 8개 프로젝트 보기', exact: true}).click();
+    assert.equal(await page.locator('#ua-project-heatmap .ua-heatmap-row').count(), 9, 'all 8 projects expand on demand');
+    await page.locator('#ua-project-heatmap [data-heatmap-metric="tokens"]').click();
+    assert.match(await page.locator('#ua-project-heatmap').textContent(), /만/);
+    await page.locator('#ua-project-heatmap [data-heatmap-metric="cost"]').click();
+    const denseScroll = await page.locator('#ua-details-scroll').evaluate(node => ({clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth}));
+    assert.ok(denseScroll.scrollHeight < 1900, `bounded layout eliminates massive scroll wall even with 300 rows (got ${denseScroll.scrollHeight}px)`);
+    assert.ok(denseScroll.scrollWidth <= denseScroll.clientWidth + 1);
+    await page.screenshot({path: path.join(dir, 'screenshots/details-report-heatmap-desktop.png')});
+    await page.locator('[data-report-view-target="calls"]').click();
+    assert.equal(await page.locator('[data-report-section="sessions"]').isVisible(), false);
+    assert.equal(await page.locator('[data-report-section="calls"]').isVisible(), true);
+    await page.locator('[data-report-view-target="all"]').click();
+    assert.equal(await page.locator('[data-report-section="sessions"]').isVisible(), true);
+    await page.locator('#ua-project-heatmap .ua-heatmap-project').filter({hasText: '서비스-1'}).click();
+    assert.equal((await last()).filters.project, denseProjects[0].project, 'clicking project in heatmap filters report');
+    await reply({...denseReport, summary: {...denseReport.summary, project: denseProjects[0].project}});
+    await page.locator('#ua-tab-conversation').click();
+    await page.screenshot({path: path.join(dir, 'screenshots/details-conversation-tray-desktop.png')});
+    await page.getByRole('button', {name: '최신 대화', exact: true}).click();
     const lateConversation = (await last()).requestId; await close.click();
+    assert.equal((await page.evaluate(() => window.savedState))?.details, null, 'closing modal clears persisted open state');
     await send({type: 'conversation', requestId: lateConversation, data: transcript}); assert.equal(await page.getByText('작업 결과', {exact: true}).count(), 0);
     passed.push('latest-first sessions/calls, descending time-header clicks, on-demand conversation, plain-text injection isolation, paging, stale/close cancellation and fullscreen resize independent of page settings');
     assert.deepEqual(errors, []); passed.push('closed response cancellation, 360px bounds/local table scrolling, analysis-off availability');

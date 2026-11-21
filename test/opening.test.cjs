@@ -451,3 +451,36 @@ test('display settings update both views immediately without changing collected 
   h.settings['display.codex'] = true; await apply('display.codex');
   assert.equal(h.api.snapshot().visibility.showCodex, true); assert.equal(h.calls.length, 0);
 });
+
+test('same-provider detail filter refresh keeps an open conversation reader alive until provider change, tab hide or close', async t => {
+  const now = Date.now(), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'usage-atlas-conv-keep-'));
+  t.after(() => fs.rm(dir, {recursive: true, force: true}));
+  const codexHome = path.join(dir, 'codex'), claudeDir = path.join(dir, 'claude'), sessionFile = path.join(codexHome, 'sessions', 's-keep.jsonl');
+  await fs.mkdir(path.dirname(sessionFile), {recursive: true});
+  await fs.mkdir(claudeDir, {recursive: true});
+  const previousCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codexHome;
+  t.after(() => {if (previousCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousCodexHome;});
+  const stamp = offset => new Date(now + offset).toISOString();
+  await fs.writeFile(sessionFile, [
+    {type: 'session_meta', timestamp: stamp(-20000), payload: {id: 's-keep', cwd: '/fixture/ usage-atlas', account_hash: core.hash('codex')}}
+  , {type: 'response_item', timestamp: stamp(-19000), payload: {type: 'message', role: 'user', content: [{type: 'input_text', text: '질문 유지 확인'}]}}
+  , {type: 'response_item', timestamp: stamp(-18000), payload: {type: 'message', role: 'assistant', content: [{type: 'output_text', text: '답변 유지 확인'}]}}
+  , {type: 'response.completed', timestamp: stamp(-17000), response: {id: 'resp-keep', model: 'gpt-6.1-sol', usage: {input_tokens: 100, cached_input_tokens: 0, output_tokens: 20}}}
+  ].map(item => JSON.stringify(item)).join('\n') + '\n');
+  const h = await harness(t, {settings: {analysisEnabled: true, claudeConfigDir: claudeDir}});
+  for (let i = 0; i < 8 && !h.api.analysisSnapshot().calls.some(row => row.sessionId === 's-keep'); i++) await h.api.maintainAnalysis(true);
+  await h.open();
+  const panel = h.panels[0], initial = h.bootstrap(panel);
+  await panel.receive({type: 'ready', revision: initial.revision});
+  const callRow = h.api.analysisSnapshot().calls.find(row => row.sessionId === 's-keep');
+  assert.ok(callRow);
+  await panel.receive({type: 'conversation', requestId: 'conv-1', provider: 'codex', window: 'week', time: now - 10000, start: now - 60000, end: now, filters: {}, conversationSessionId: 's-keep', conversationHomeKey: callRow.homeKey, cursor: null});
+  assert.equal(panel.messages.at(-1).type, 'conversation');
+  assert.ok(h.api.conversationStatus().sources > 0);
+  await panel.receive({type: 'details', requestId: 'det-same', provider: 'codex', window: 'week', time: now - 10000, start: now - 60000, end: now, filters: {model: 'gpt-6.1-sol'}});
+  assert.equal(panel.messages.at(-1).type, 'details');
+  assert.ok(h.api.conversationStatus().sources > 0, 'same-provider detail refresh preserves open conversation reader');
+  await panel.receive({type: 'details', requestId: 'det-other', provider: 'claude', window: 'week', time: now - 10000, start: now - 60000, end: now, filters: {}});
+  assert.equal(h.api.conversationStatus().sources, 0, 'switching provider releases previous conversation reader');
+});

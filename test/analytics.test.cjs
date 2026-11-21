@@ -49,9 +49,11 @@ function report(extra = {}) {
 
 test('empty modal report remains complete JSON with explicit unknowns', () => {
   const result = report();
-  assert.deepEqual(Object.keys(result), ['summary', 'projectLabels', 'filterOptions', 'filterOptionCounts', 'coverage', 'sessions', 'requests', 'calls', 'agents', 'comparisons', 'cache', 'cycles', 'conversion', 'estimate', 'exclusions', 'diagnostics', 'provenance']);
+  assert.deepEqual(Object.keys(result), ['summary', 'projectLabels', 'filterOptions', 'filterOptionCounts', 'projects', 'coverage', 'sessions', 'requests', 'calls', 'agents', 'comparisons', 'cache', 'cycles', 'conversion', 'estimate', 'exclusions', 'diagnostics', 'provenance']);
   assert.equal(result.summary.costUsd, null);
   assert.equal(result.summary.knownCostUsd, 0);
+  assert.equal(result.projects.totalCount, 0);
+  assert.deepEqual(result.projects.items, []);
   assert.equal(result.cache.ratio, null);
   assert.equal(result.estimate.valueUsdPer100Pct, null);
   assert.deepEqual(JSON.parse(JSON.stringify(result)), result);
@@ -526,4 +528,28 @@ test('project labels use the source Unicode basename contract and never synthesi
   assert.equal(result.calls.items.find(row => row.project === second).projectName, null);
   assert.deepEqual(result.filterOptions.project, [first, second]);
   assert.equal(report({calls, project: '__proto__'}).summary.projectName, null);
+});
+
+test('project heatmap aggregates full non-excluded population across adaptive buckets and preserves other projects under project filter', () => {
+  const first = 'a'.repeat(64), second = 'b'.repeat(64);
+  const start = base, end = base + 7 * 86400000;
+  const calls = [
+    call('first-edge', start, {project: first, projectName: 'usage-atlas', input: 200000, output: 50000})
+  , call('mid-slot', start + 3 * 86400000, {project: first, projectName: 'usage-atlas', input: 300000, output: 100000})
+  , call('last-edge', end - 1, {project: second, projectName: 'session-browser', input: 100000, output: 20000})
+  , call('unsafe-label', start + 86400000, {project: 'c'.repeat(64), projectName: 'C:\\secret\\repo', input: 50000, output: 10000})
+  ];
+  const full = analyze({provider: 'codex', window: 'week', account: 'account-a', start, end, now: end, calls});
+  assert.equal(full.projects.totalCount, 3);
+  assert.equal(full.projects.bucketCount, 28);
+  assert.equal(full.projects.totals.callCount, 4);
+  assert.equal(full.projects.buckets.reduce((sum, item) => sum + item.callCount, 0), 4);
+  assert.equal(full.projects.items[0].project, first);
+  assert.equal(full.projects.items[0].projectName, 'usage-atlas');
+  assert.equal(full.projects.items[0].buckets[0].callCount, 1);
+  assert.equal(full.projects.items.find(item => item.project === second).buckets.at(-1).callCount, 1);
+  assert.equal(full.projects.items.find(item => item.project === 'c'.repeat(64)).projectName, null);
+  const filteredByProject = analyze({provider: 'codex', window: 'week', account: 'account-a', start, end, now: end, calls, project: second});
+  assert.equal(filteredByProject.summary.callCount, 1);
+  assert.equal(filteredByProject.projects.totalCount, 3, 'heatmap keeps sibling projects visible for one-click switching');
 });

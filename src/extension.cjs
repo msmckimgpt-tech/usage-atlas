@@ -54,8 +54,8 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
   const sessionIndex = new SessionIndex({dir: store.dir, retentionDays: cfg().get('retentionDays')});
   let analysisData = {calls: [], activity: {}, coverage: {}, revision: 0}, maintenanceTimer, maintenanceRunning, detailSerial = 0, detailController;
   const conversationReader = new ConversationReader();
-  let conversationController, conversationSerial = 0, conversationScope;
-  const closeConversations = () => {conversationSerial++; conversationController?.abort(); conversationScope = null; return conversationReader.close();};
+  let conversationController, conversationSerial = 0, conversationScope, conversationProvider = null;
+  const closeConversations = () => {conversationSerial++; conversationController?.abort(); conversationScope = null; conversationProvider = null; return conversationReader.close();};
   let creditBasisQueue = Promise.resolve();
   let panel, timer, disposed = false, running = null, uiReady = false, intervalChanged = false, timerVersion = 0, revision = 0, sentRevision = -1, viewRefreshPending = false;
   let historyFrom = null, historyProjection, historySelection, historyVersion = 0, historyController, historyWork, historyStamp, viewSending;
@@ -262,6 +262,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     if (maintenanceRunning || disposed || !vscode.workspace.isTrusted || !cfg().get('enabled') || !cfg().get('analysisEnabled', true)) return;
     maintenanceRunning = (async () => {
       const result = await store.withLock(async () => {
+        if (disposed || !vscode.workspace.isTrusted || !cfg().get('enabled') || !cfg().get('analysisEnabled', true)) return false;
         await loadMeta();
         const owner = metadata.analysisOwnerPid;
         if (!force && Number.isInteger(owner) && owner > 0 && owner !== process.pid && Date.now() - (metadata.analysisScanAt || 0) < 45000) {
@@ -280,6 +281,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
         const due = upgradeProof || !sameScope || !currentConversion() || Date.now() - automatic.measuredAt >= 60000;
         if (due && (upgradeProof || automatic?.inputKey !== inputKey() || automatic?.revision !== analysisData.revision || !sameScope)) {
           const value = await diagnostics.measure('shared', 'conversion', () => queryAnalysis({operation: 'conversion', records, calls: analysisData.calls, capacities: metadata.capacities, exclusions: metadata.exclusions || [], revision: analysisData.revision, now: Date.now()}, {signal: controller.signal}));
+          if (disposed || !cfg().get('enabled') || !cfg().get('analysisEnabled', true)) return false;
           value.historyStamp = typeof store.cachedStamp === 'string' ? store.cachedStamp : null;
           const temporary = automaticFile + '.' + process.pid + '.tmp';
           const text = JSON.stringify(value);
@@ -288,6 +290,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
           finally {await fs.unlink(temporary).catch(() => {});}
           automatic = value; automaticStamp = null; projectionCache = null; await publish();
         }
+        if (disposed || !cfg().get('enabled') || !cfg().get('analysisEnabled', true)) return false;
         let changed = false;
         for (const id of ['codex', 'claude']) {
           const activity = analysisData.activity?.[id], collector = metadata.collectors[id];
@@ -378,7 +381,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     const home = scope.provider === 'codex' ? process.env.CODEX_HOME || path.join(os.homedir(), '.codex') : cfg().get('claudeConfigDir') || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
     const roots = (scope.provider === 'codex' ? ['sessions', 'archived_sessions'] : ['projects']).map(name => path.join(home, name));
     const result = await conversationReader.open({hints, roots, start: scope.start, end: scope.end, earliest: Date.now() - (cfg().get('retentionDays') || 90) * 86400000, signal});
-    conversationScope = key;
+    conversationScope = key; conversationProvider = scope.provider;
     return {...result, sessionId};
   }
   async function handleConversation(message, current) {
@@ -392,7 +395,7 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     }
   }
   async function handleDetails(message, current) {
-    await closeConversations();
+    if (conversationProvider && conversationProvider !== message?.provider) await closeConversations();
     const serial = ++detailSerial;
     detailController?.abort(); detailController = new AbortController();
     const signal = detailController.signal;

@@ -310,6 +310,83 @@ function requestRows(rows) {
   return {items, totalCount: byRequest.size, knownCount, limit: 50, truncated: byRequest.size > 50};
 }
 
+function heatmapStep(span) {
+  const hour = 3600000, day = 86400000;
+  if (span <= 6 * hour) return 900000;
+  if (span <= 24 * hour) return hour;
+  if (span <= 3 * day) return 3 * hour;
+  if (span <= 10 * day) return 6 * hour;
+  if (span <= 56 * day) return day;
+  return Math.max(7 * day, Math.ceil(span / 52 / day) * day);
+}
+
+function projectHeatmap(rows, start, end, validRange = true) {
+  if (!validRange || !finite(start) || !finite(end) || start >= end) {
+    return {items: [], totalCount: 0, knownCount: 0, limit: 50, truncated: false, start: finite(start) ? start : null, end: finite(end) ? end : null, bucketStepMs: null, bucketCount: 0, totals: {callCount: 0, knownCostUsd: 0, tokens: 0}, buckets: []};
+  }
+  const span = Math.max(1, end - start), stepMs = heatmapStep(span);
+  const bucketCount = Math.max(1, Math.min(56, Math.ceil(span / stepMs)));
+  const overall = Array.from({length: bucketCount}, (_, index) => ({
+    start: start + index * stepMs
+  , end: Math.min(end, start + (index + 1) * stepMs)
+  , callCount: 0
+  , knownCostUsd: 0
+  , tokens: 0
+  }));
+  const byProject = groups(rows, row => typeof row.project === 'string' && row.project ? row.project : 'unknown');
+  const allProjects = [];
+  let totalKnownCostUsd = 0, totalTokens = 0, knownCount = 0;
+  for (const [id, list] of byProject) {
+    const own = totals(list);
+    if (own.costUsd != null) knownCount++;
+    const inputKnown = sumKnown(list, 'input').knownSum, cachedKnown = sumKnown(list, 'cached').knownSum, outputKnown = sumKnown(list, 'output').knownSum;
+    const tokens = inputKnown + outputKnown;
+    const names = [...new Set(list.map(row => projectName(row.projectName)).filter(Boolean))];
+    const safeLabel = id !== 'unknown' && /^[a-f\d]{64}$/i.test(id) && names.length === 1 ? names[0] : null;
+    const buckets = Array.from({length: bucketCount}, () => ({callCount: 0, knownCostUsd: 0, tokens: 0}));
+    const sessions = new Set();
+    for (const row of list) {
+      if (row.sessionId != null) sessions.add(row.sessionId);
+      const t = callTime(row);
+      if (!finite(t) || t < start || t >= end) continue;
+      const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((t - start) / stepMs)));
+      const rowCost = finite(row.costUsd) ? row.costUsd : 0;
+      const rowTokens = (count(row.input) ? row.input : 0) + (count(row.output) ? row.output : 0);
+      buckets[index].callCount++;
+      buckets[index].knownCostUsd += rowCost;
+      buckets[index].tokens += rowTokens;
+      overall[index].callCount++;
+      overall[index].knownCostUsd += rowCost;
+      overall[index].tokens += rowTokens;
+    }
+    totalKnownCostUsd += own.knownCostUsd;
+    totalTokens += tokens;
+    allProjects.push({
+      id
+    , project: id
+    , projectName: safeLabel
+    , ...own
+    , inputTokens: inputKnown
+    , cachedTokens: cachedKnown
+    , outputTokens: outputKnown
+    , tokens
+    , sessionCount: sessions.size
+    , lastObservedAt: latestTime(list)
+    , buckets
+    });
+  }
+  allProjects.sort((a, b) => b.knownCostUsd - a.knownCostUsd || b.callCount - a.callCount || b.tokens - a.tokens || (b.lastObservedAt ?? -Infinity) - (a.lastObservedAt ?? -Infinity) || String(a.project).localeCompare(String(b.project)));
+  return {
+    ...bounded(allProjects, knownCount, 50)
+  , start
+  , end
+  , bucketStepMs: stepMs
+  , bucketCount
+  , totals: {callCount: rows.length, knownCostUsd: totalKnownCostUsd, tokens: totalTokens}
+  , buckets: overall
+  };
+}
+
 function cycleCalls(rows, cycles) {
   const byCycle = new Map();
   for (const row of rows) {
@@ -475,6 +552,7 @@ function analyze(options = {}) {
     const {provider, account = report.summary.account, window = 'week', records = []} = options;
     const rows = records.filter(row => row.provider === provider && row.account === account && row.time >= report.summary.start && row.time < report.summary.end && row.windows?.[window]);
     report.observations = {items: rows.slice().sort((a, b) => b.time - a.time).slice(0, 100).map(row => ({time: row.time, used: row.windows[window].used, reset: row.windows[window].reset})), totalCount: rows.length, limit: 100, truncated: rows.length > 100};
+    report.projects = {items: [], totalCount: 0, knownCount: 0, limit: 50, truncated: false, start: report.summary.start, end: report.summary.end, bucketStepMs: null, bucketCount: 0, totals: {callCount: null, knownCostUsd: null, tokens: null}, buckets: []};
     for (const target of [report.summary, report.coverage]) for (const key of Object.keys(target)) if (/^callCount$|CallCount$|^(?:input|cached|output|cacheRatio|sessionCount|requestCount|costUsd|knownCostUsd)$/.test(key)) target[key] = null;
   }
   return report;
@@ -557,9 +635,14 @@ function buildReport(options) {
     return {...cycle, ...totals(ownCalls), quotaDelta: ownIntervals.reduce((sum, item) => sum + item.delta, 0), events: cycle.events.slice(0, 50), eventCount: cycle.events.length};
   });
   const beforeTotal = totals(before);
+  const hasProjectFilter = selectedFilters.project != null && selectedFilters.project !== '' && selectedFilters.project !== 'all';
+  const projectPool = hasProjectFilter
+    ? accountSource.filter(row => filtered(row, {...selectedFilters, project: null})).map(row => priceCall(row, {assumeMode: 'Standard'})).filter(row => !excludedCall(row, excluded.ranges))
+    : rows;
+  const projects = projectHeatmap(projectPool, start, end, validRange);
   const times = source.map(callTime);
   const policy = catalog.policies[provider];
-  const projectDetails = projectMetadata(accountSource, selectedFilters.project, [...sessions.items, ...requests.items, ...callDetails, ...compare]);
+  const projectDetails = projectMetadata(accountSource, selectedFilters.project, [...sessions.items, ...requests.items, ...callDetails, ...compare, ...projects.items]);
   return {
     summary: {
       provider
@@ -580,6 +663,7 @@ function buildReport(options) {
     , projectName: Object.hasOwn(projectDetails.projectLabels, selectedFilters.project ?? '') ? projectDetails.projectLabels[selectedFilters.project] : null
     }
   , ...projectDetails
+  , projects
   , coverage: {
       source: safe(coverage)
     , denominatorScope: 'indexed-local-calls-in-selected-range'

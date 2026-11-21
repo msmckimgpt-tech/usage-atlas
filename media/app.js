@@ -11,17 +11,19 @@
   const colors = {codex: 'var(--ua-a)', claude: 'var(--ua-b)'};
   const week = 7 * 86400000, minSpan = 60000;
   const providerVisibility = globalThis.usageAtlasProviderVisibility;
-  const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, range: null};
+  const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, range: null, details: null};
   let state = {...defaults}, model = {now: Date.now(), data: {}}, raf, view, gesture = null, chartDrag = null, historyBusy = false;
   const initialNode = document.getElementById('ua-initial-data');
   if (initialNode) {const initial = JSON.parse(initialNode.textContent); if (initial?.type === 'data' && initial.data && Number.isFinite(initial.now)) model = initial; initialNode.remove();}
-  const details = globalThis.usageAtlasDetails?.({api, root, getModel: () => model});
+  const save = () => api.setState(state);
+  const details = globalThis.usageAtlasDetails?.({api, root, getModel: () => model, onStateChange: value => {state.details = value || null; save();}});
   const saved = api.getState();
   if ([3, 4, 5, 6].includes(saved?.version)) {
     for (const [key, values] of Object.entries({mode: ['usage', 'delta', 'total'], basis: ['current', 'base'], theme: ['system', 'light', 'dark'], creditMode: ['money', 'estimate']})) if (values.includes(saved[key])) state[key] = saved[key];
     for (const key of ['credit', 'refs']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
     if (Array.isArray(saved.range) && saved.range.length === 2 && saved.range.every(Number.isFinite) && saved.range[0] < saved.range[1]) state.range = [...saved.range];
     if (Number.isSafeInteger(saved.historyVersion) && saved.historyVersion >= 0) state.historyVersion = saved.historyVersion;
+    if (saved.details && typeof saved.details === 'object' && saved.details.open === true && saved.details.selection && typeof saved.details.selection === 'object') state.details = saved.details;
   }
   let legacySelection = saved && [3, 4, 5].includes(saved.version) && !initialNode ? saved : null;
   state.hiddenProviders = providerVisibility.restore([...new Set([...ids, ...Object.keys(model.data)])], saved);
@@ -56,7 +58,6 @@
       if (highlighted !== item.highlighted) {item.highlighted = highlighted; item.node.classList.toggle('ua-highlight-trace', highlighted);}
     }
   }
-  const save = () => api.setState(state);
   const fmtFormat = new Intl.DateTimeFormat('ko-KR', {month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false});
   const fmt = time => fmtFormat.format(new Date(time));
   const round = n => Math.round(n * 10) / 10;
@@ -861,6 +862,8 @@
   window.addEventListener('pagehide', () => {save(); resize.disconnect(); cancelAnimationFrame(raf);});
   const ready = () => api.postMessage({type: 'ready', revision: model.revision});
   document.addEventListener('visibilitychange', () => {if (document.hidden) save(); else ready();});
-  draw(); ready();
+  draw();
+  if (state.details) details?.restore?.(state.details);
+  ready();
 })();
 

@@ -1,3 +1,10 @@
+Usage Atlas 0.3.36 — 마켓플레이스 설명 개편
+
+- README를 가치 중심으로 다시 쓰고 화면 시연 GIF를 추가했습니다. 확장 동작은 바뀌지 않았습니다.
+- 상세 설명은 docs/USER-GUIDE.md, 개발 절차는 CONTRIBUTING.md로 이동했습니다.
+
+---
+
 Usage Atlas 0.3.35 — 모델 카드 Ctrl+클릭 단독 표시
 
 - 모델 카드를 Ctrl+클릭하면 그 모델만 표시하고, 다시 Ctrl+클릭하면 전체를 복원합니다.

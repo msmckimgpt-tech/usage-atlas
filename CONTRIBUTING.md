@@ -17,3 +17,25 @@
 환경 변수 `USAGE_ATLAS_BROWSER`로 브라우저 실행 파일을, `USAGE_ATLAS_VSCODE_PATH`로 격리 검수에 사용할 VS Code 실행 파일을 지정할 수 있습니다. 개인 VS Code의 설정과 확장 목록은 검수 대상이 아닙니다.
 
 동봉한 라이선스와 원저자 UI 고지는 그대로 유지하세요. 생성된 EXE·VSIX·로그·계정 기록은 Git에 커밋하지 않습니다. 처음 공개한 저장소는 실행 소스, 합성 fixture, 재현 가능한 빌드 도구만 포함합니다.
+
+## 개발 환경과 패키징(README에서 이동)
+
+Node.js 24 이상과 npm이 필요하며 Windows 패키징에는 .NET Framework C# 컴파일러가 필요합니다. 설치되는 확장 자체는 외부 Node.js 설치 없이 VS Code 확장 호스트에서 실행됩니다.
+
+~~~sh
+npm ci
+npx playwright install chromium
+npm test
+npm run build:webview
+npm run verify:release
+~~~
+
+Windows에서 설치 가능한 VSIX와 SHA256을 만듭니다.
+
+~~~sh
+npm run package
+~~~
+
+이 명령은 Windows 수집 도우미 빌드와 필수 검수를 통과한 경우에만 VSIX를 생성합니다. GUI 검수는 합성 데이터와 격리된 VS Code 프로필을 사용하며 필요한 경우 VS Code 테스트 실행 파일을 자동 다운로드합니다. 저장된 실제 계정·대화·수집 기록은 검수 입력이 아닙니다.
+
+[검증 구조](VALIDATION.md)도 참조하세요.

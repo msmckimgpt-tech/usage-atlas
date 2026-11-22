@@ -68,11 +68,11 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
   const summaries = []; let visible = 0;
   for (const id of providers) {
     const provider = projected[id], last = provider?.last?.time <= now ? provider.last : history.findLast(r => r.provider === id);
-    const summary = {name: names[id], five: '-', week: '-', resets: {five: '-', week: '-'}, status: collectors[id]?.message || '수집 대기', observed: last ? date.format(last.time) : '-'};
+    const summary = {name: names[id], color: palette[id], used: {five: null, week: null}, five: '-', week: '-', resets: {five: '-', week: '-'}, status: collectors[id]?.message || '수집 대기', observed: last ? date.format(last.time) : '-'};
     if (last && now - last.time > staleAfterMs) summary.status += ' · 기록 지연';
     for (const w of ['five', 'week']) {
       const value = last?.windows[w]?.used;
-      if (typeof value === 'number' && Number.isFinite(value)) summary[w] = percent(value);
+      if (typeof value === 'number' && Number.isFinite(value)) {summary[w] = percent(value); summary.used[w] = value;}
       summary.resets[w] = resetRemaining(last?.windows[w]?.reset, now);
       const source = allSeries.find(s => s.id === id && s.w === w), segments = source?.bridges || [];
       const points = thin(windowPoints(source?.points || [], p => p.y, start), 240);
@@ -130,4 +130,29 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
   parts.push('</svg>');
   return {svg: parts.join(''), start, end: now, range: `${date.format(start)} – ${date.format(now)}`, summaries};
 }
-module.exports = {preview, resetRemaining};
+// 모델별 5시간·주간 사용량 표. 각 칸 뒤에 사용률만큼 채운 반투명 막대를 깔아 글자와 함께 사용량을 한눈에 비교한다.
+// 호버 마크다운의 HTML 표는 배경 스타일이 제거되므로 SVG 이미지로 그린다. 접근성 문구는 상태 표시줄 accessibilityInformation 이 대신한다.
+function summaryTable(summaries, {dark = false, forecastEnabled = true} = {}) {
+  const ink = dark ? '#e2e8f0' : '#1f2937', muted = dark ? '#94a3b8' : '#5b6778', line = dark ? '#3a414c' : '#d3dae3', track = dark ? '#ffffff' : '#000000';
+  const width = 360, nameW = 100, colW = 130, head = 22, rowH = 40, height = head + summaries.length * rowH + 4;
+  const cell = (column, w) => nameW + column * colW;
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="모델별 5시간·주간 사용량"><style>text{font:12px 'Segoe UI',sans-serif;fill:${ink}}.m{fill:${muted};font-size:11px}.h{fill:${muted};font-weight:600}</style>`];
+  parts.push(`<text class="h" x="${cell(0, 'five') + colW - 4}" y="15" text-anchor="end">5시간</text><text class="h" x="${cell(1, 'week') + colW - 4}" y="15" text-anchor="end">주간</text>`);
+  for (const [i, s] of summaries.entries()) {
+    const top = head + i * rowH;
+    parts.push(`<line x1="0" x2="${width}" y1="${top}" y2="${top}" stroke="${line}" stroke-width=".6"/>`);
+    parts.push(`<text x="0" y="${top + 24}">${escape(s.name)}</text>`);
+    for (const [column, w] of ['five', 'week'].entries()) {
+      const x0 = cell(column, w), used = s.used?.[w], ratio = number(used) ? Math.max(0, Math.min(100, used)) / 100 : 0;
+      parts.push(`<rect x="${x0 + 1}" y="${top + 3}" width="${colW - 2}" height="${rowH - 6}" rx="3" fill="${track}" opacity=".06"/>`);
+      if (ratio > 0) parts.push(`<rect data-usage-bar="${escape(s.name)}-${w}" x="${x0 + 1}" y="${top + 3}" width="${Math.max(1.5, (colW - 2) * ratio).toFixed(1)}" height="${rowH - 6}" rx="3" fill="${s.color || ink}" opacity=".32"/>`);
+      const tx = x0 + colW - 5;
+      if (s[w] === '-') {parts.push(`<text x="${tx}" y="${top + 24}" text-anchor="end">-</text>`); continue;}
+      parts.push(`<text x="${tx}" y="${top + (forecastEnabled ? 17 : 24)}" text-anchor="end">${escape(`${s[w]} (${s.resets[w]})`)}</text>`);
+      if (forecastEnabled) parts.push(`<text class="m" x="${tx}" y="${top + 31}" text-anchor="end">${escape(`${s.forecasts?.[w]?.label || '예상'} ${s.forecasts?.[w]?.text || '-'}`)}</text>`);
+    }
+  }
+  parts.push('</svg>');
+  return parts.join('');
+}
+module.exports = {preview, resetRemaining, summaryTable};

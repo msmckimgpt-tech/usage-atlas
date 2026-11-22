@@ -41,7 +41,7 @@ async function harness(t, options = {}) {
   };
   class Store {constructor() {this.dir = dir; this.archive = optionsHarness.archive;} async read() {return records;} async withLock(fn) {return fn();} async commit(additions) {records = [...records, ...additions].sort((a, b) => a.time - b.time); return records;}}
   const localRequire = createRequire(path.join(root, 'src', 'extension.cjs'));
-  const requireMock = name => name === 'vscode' ? vscode : name === './core.cjs' ? {...core, Store} : name === './adapters.cjs' ? adapters : name === './antigravity.cjs' && options.antigravity ? {dataDir: value => value, dispose() {}, collect: async (...args) => {calls.push('antigravity'); return options.antigravity(...args);}} : name === './hover.cjs' ? {preview: (records, options) => {previewOptions.push(options); return optionsHarness.realPreview ? localRequire('./hover.cjs').preview(records, options) : {svg: '<svg/>', summaries: []};}} : localRequire(name);
+  const requireMock = name => name === 'vscode' ? vscode : name === './core.cjs' ? {...core, Store} : name === './adapters.cjs' ? adapters : name === './antigravity.cjs' && options.antigravity ? {dataDir: value => value, dispose() {}, collect: async (...args) => {calls.push('antigravity'); return options.antigravity(...args);}} : name === './hover.cjs' ? {summaryTable: localRequire('./hover.cjs').summaryTable, preview: (records, options) => {previewOptions.push(options); return optionsHarness.realPreview ? localRequire('./hover.cjs').preview(records, options) : {svg: '<svg/>', summaries: []};}} : localRequire(name);
   const mod = {exports: {}};
   vm.runInNewContext(`(function(require,module,exports){${await fs.readFile(path.join(root, 'src', 'extension.cjs'), 'utf8')}\n})`, {AbortController, process, Buffer, setTimeout: () => 1, clearTimeout() {}})(requireMock, mod, mod.exports);
   const api = await mod.exports.activate({globalStorageUri: {fsPath: dir}, extensionUri: {fsPath: root}, extensionPath: root, extension: {id: 'local-tools.usage-atlas', packageJSON: require('../package.json')}, subscriptions: []});
@@ -98,15 +98,19 @@ test('AGY smoothing settings update both views immediately without recollection 
   assert.equal(h.calls.length, 0);
 });
 
+// 호버의 SVG 이미지(base64)를 풀어 글자까지 검사한다.
+const decoded = markdown => markdown + [...markdown.matchAll(/base64,([^)]+)\)/g)].map(m => Buffer.from(m[1], 'base64').toString('utf8')).join('\n');
 test('preview model cells contain only compact names without collector errors or record-delay text', async t => {
   const now = Date.now(), message = 'Claude 구독 계정 로그인이 필요합니다.';
   const records = ['codex', 'claude', 'antigravity-5d72436256ada538'].map(provider => ({v: 1, provider, account: core.hash(provider), plan: 'fixture', time: now - 3600000, ...(provider.startsWith('antigravity-') ? {label: 'Gemini'} : {}), windows: {five: null, week: {used: 42, reset: now + 86400000}}}));
   const h = await harness(t, {realPreview: true, records, metadata: {collectors: {claude: {message}}}});
   await h.open();
   const markdown = h.markdowns.at(-1).value;
-  const cells = [...markdown.matchAll(/<tr><td>(.*?)<\/td>/g)].map(match => match[1]);
+  const table = [...markdown.matchAll(/!\[모델별 5시간·주간 사용량\]\(data:image\/svg\+xml;base64,([^)]+)\)/g)].map(match => Buffer.from(match[1], 'base64').toString('utf8'))[0];
+  assert.ok(table, '모델별 표 SVG 가 있어야 한다');
+  const cells = [...table.matchAll(/<text x="0" y="[\d.]+">(.*?)<\/text>/g)].map(match => match[1]);
   assert.deepEqual(cells, ['Codex', 'Claude Code', 'AGY Gemini']);
-  assert.doesNotMatch(markdown, /구독 계정|기록 지연|기록지연|<small>/);
+  assert.doesNotMatch(markdown + table, /구독 계정|기록 지연|기록지연|<small>/);
   assert.equal(h.api.snapshot().data.claude.status.message, message);
   assert.equal(h.api.snapshot().data.claude.last.windows.week.used, 42);
   assert.equal(h.calls.length, 0);
@@ -322,8 +326,8 @@ test('forecast settings share a cached unthinned estimate between page and previ
   const payload = h.api.snapshot(), value = payload.data.codex.forecast.five;
   assert.equal(payload.forecastEnabled, true); assert.equal(value.state, 'predicted');
   assert.equal(value.eta, h.previewOptions.at(-1).projection.codex.forecast.five.eta);
-  assert.match(h.markdowns.at(-1).value, /사용 가능 ≈1h 40m/);
-  assert.match(h.markdowns.at(-1).value, /도달 사용량 ≈65%/);
+  assert.match(decoded(h.markdowns.at(-1).value), /사용 가능 ≈1h 40m/);
+  assert.match(decoded(h.markdowns.at(-1).value), /도달 사용량 ≈65%/);
   assert.doesNotMatch(h.markdowns.at(-1).value, /초기화 우선|만료 우선/);
   assert.equal(h.api.snapshot().data.codex.forecast, payload.data.codex.forecast, 'unchanged observations reuse the forecast object');
   h.settings.forecastFiveLookbackMinutes = 30;
@@ -332,7 +336,7 @@ test('forecast settings share a cached unthinned estimate between page and previ
   h.settings.forecastEnabled = false;
   for (const change of h.changes) change({affectsConfiguration: section => section === 'usageAtlas'});
   assert.equal(h.api.snapshot().data.codex.forecast, undefined); assert.equal(h.api.snapshot().forecastEnabled, false);
-  assert.doesNotMatch(h.markdowns.at(-1).value, /사용 가능|도달 사용량|초기화 잔여/); assert.equal(h.calls.length, 0);
+  assert.doesNotMatch(decoded(h.markdowns.at(-1).value), /사용 가능|도달 사용량|초기화 잔여/); assert.equal(h.calls.length, 0);
 });
 
 

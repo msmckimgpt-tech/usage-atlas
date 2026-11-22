@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const {converter, validConversion, scopeKey, sourceKey, matchesConversionSource} = require('./credit-conversion.cjs');
 const {Store, project, sanitize} = require('./core.cjs');
-const {preview} = require('./hover.cjs');
+const {preview, summaryTable} = require('./hover.cjs');
 const forecasts = require('../media/forecast.js');
 const chartGraphs = require('../media/chart-series.js');
 const billing = require('./billing.cjs');
@@ -153,10 +153,9 @@ const staleAfterMs = () => Math.max(900000, maxIntervalSeconds() * 3000);
     const title = `<svg xmlns="http://www.w3.org/2000/svg" width="332" height="24"><text x="0" y="22" fill="${color}" font-family="Segoe UI,sans-serif" font-size="13" font-weight="600">Usage Atlas · 최근 5시간</text></svg>`;
     md.appendMarkdown(`![Usage Atlas · 최근 5시간](data:image/svg+xml;base64,${Buffer.from(title).toString('base64')}) [$(gear)](command:usageAtlas.settings "Usage Atlas 설정")\n\n`);
     md.appendMarkdown(`![AI 서비스별 최근 5시간 사용률](data:image/svg+xml;base64,${Buffer.from(p.svg).toString('base64')})\n\n`);
-    md.appendMarkdown('<table width="360"><thead><tr><th width="100" align="left"></th><th width="130" align="right">5시간</th><th width="130" align="right">주간</th></tr></thead><tbody>');
-    const escapeHtml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    for (const s of p.summaries) md.appendMarkdown(`<tr><td>${escapeHtml(s.name)}</td>${['five', 'week'].map(w => `<td align="right">${s[w] === '-' ? '-' : `${s[w]} (${s.resets[w]})${key.forecastEnabled ? '<br/>' + (s.forecasts?.[w]?.label || '예상') + ' ' + (s.forecasts?.[w]?.text || '-') : ''}`}</td>`).join('')}</tr>`);
-    md.appendMarkdown('</tbody></table>\n\n');
+    md.appendMarkdown(`![모델별 5시간·주간 사용량](data:image/svg+xml;base64,${Buffer.from(summaryTable(p.summaries, {dark, forecastEnabled: key.forecastEnabled})).toString('base64')})
+
+`);
     status.tooltip = md;
     status.accessibilityInformation = {label: `Usage Atlas. 최근 5시간 사용량. ${p.summaries.map(s => `${s.name}${s.status && s.status !== '정상' ? ' (' + s.status + ')' : ''} 5시간 ${s.five}, 주간 ${s.week}`).join('. ')}. 클릭하여 상세 차트 열기`};
     hoverCache = key;

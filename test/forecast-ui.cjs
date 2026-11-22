@@ -190,6 +190,10 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     await toggle.click(); await paint();
     assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
     assert.deepEqual(await layout(), before, 'toggling the record never moves other controls');
+    // 기본 보기는 예측 시각: 최신 스냅샷의 주간 예측 한 줄만 그리고, 5시간 창은 체크했을 때만 더한다.
+    assert.equal(await page.locator('#ua-record-panel').isVisible(), true); assert.equal(await page.locator('#ua-record-asof').getAttribute('aria-pressed'), 'true');
+    assert.deepEqual((await page.locator('[data-forecast-record]').evaluateAll(nodes => nodes.map(n => n.dataset.forecastRecord + ':' + n.dataset.recordPart))).sort(), ['codex-week:future', 'codex-week:past'], 'default as-of view draws one line per model and window');
+    await page.locator('#ua-record-base').click(); await paint();
     const records3 = await page.locator('[data-forecast-record]').evaluateAll(nodes => nodes.map(n => {const xs = [...n.getAttribute('d').matchAll(/[ML](-?[\d.e+]+),/g)].map(m => +m[1]); return {key: n.dataset.forecastRecord, part: n.dataset.recordPart, count: +n.dataset.recordCount, events: getComputedStyle(n).pointerEvents, opacity: +n.getAttribute('opacity'), minX: Math.min(...xs), maxX: Math.max(...xs)};}));
     assert.deepEqual(records3.map(r => r.key + ':' + r.part + ':' + r.count).sort(), ['claude-five:future:1', 'claude-five:past:1', 'codex-five:future:1', 'codex-five:past:1', 'codex-week:future:1', 'codex-week:past:1'], 'one baseline per cycle; snapshots from now or before the lead time are not baselines');
     const nowX = +await page.locator('[data-now]').getAttribute('x1');
@@ -213,10 +217,36 @@ const doc = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>'
     await page.setViewportSize({width: 360, height: 900}); await page.waitForTimeout(80);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)); assert.equal(await page.locator('[data-forecast-record]').count(), 6);
     await page.setViewportSize({width: 1440, height: 900});
+    // 예측 시각 보기: 슬라이더로 고른 시각에 기록돼 있던 예측을 그리고, 스냅샷 사이는 보정하며, 비교 고정은 한 줄만 더한다.
+    await page.locator('#ua-record-asof').click(); await paint();
+    const paths = () => page.locator('[data-forecast-record]').evaluateAll(nodes => nodes.map(n => n.dataset.forecastRecord + ':' + n.dataset.recordPart + (n.dataset.recordPin ? ':pin' : '') + (n.dataset.recordBlended ? ':blended' : '')).sort());
+    const setSlider = async offset => {await page.evaluate(offset => {const s = document.getElementById('ua-record-time'); s.value = String(+s.min + offset); s.dispatchEvent(new Event('input', {bubbles: true}));}, offset); await paint();};
+    await page.locator('#ua-record-five').check(); await paint();
+    assert.deepEqual(await paths(), ['claude-five:future', 'claude-five:past', 'codex-five:future', 'codex-five:past', 'codex-week:future', 'codex-week:past'], 'the five-hour window is added only when checked');
+    const sliderMin = +await page.locator('#ua-record-time').getAttribute('min'); assert.equal(sliderMin, recordNow - 55 * minute, 'range starts at the oldest stored snapshot');
+    await setSlider(10 * minute);
+    assert.deepEqual(await paths(), ['codex-week:future', 'codex-week:past'], 'models without a snapshot yet at the chosen time draw nothing');
+    assert.deepEqual(await page.locator('[data-record-anchor]').evaluateAll(nodes => Object.fromEntries(nodes.map(n => [n.dataset.recordAnchor, +n.dataset.recordAt]))), {'codex-week': sliderMin + 10 * minute}, 'the anchor marks the chosen forecast time');
+    assert.match(await page.locator('#ua-record-label').textContent(), /예측 시각 .*시간 전/);
+    await setSlider(30 * minute);
+    assert.ok((await paths()).includes('codex-five:past:blended'), 'a time between two snapshots is a blended value');
+    assert.match(await page.locator('#ua-record-label').textContent(), /보정/);
+    await page.locator('#ua-record-pin').click(); await paint();
+    assert.equal(await page.locator('#ua-record-pin').getAttribute('aria-pressed'), 'true');
+    await setSlider(10 * minute);
+    assert.ok((await paths()).some(p => p.endsWith(':pin')), 'the pinned forecast time stays drawn for comparison');
+    assert.match(await page.locator('#ua-record-label').textContent(), /고정/);
+    await page.locator('#ua-record-pin').click(); await paint(); assert.equal((await paths()).filter(p => p.endsWith(':pin')).length, 0);
+    await page.locator('#ua-record-latest').click(); await paint();
+    assert.equal(+await page.locator('[data-record-anchor="claude-five"]').getAttribute('data-record-at'), recordNow - 8 * minute, 'latest returns to the newest stored forecast');
+    await page.selectOption('#ua-record-ease', 'linear'); await paint(); assert.equal(await page.locator('#ua-record-ease').inputValue(), 'linear');
+    assert.deepEqual(await layout(), before, 'the record panel never moves other controls');
+    await page.locator('#ua-record-five').uncheck(); await page.locator('#ua-record-base').click(); await paint();
     await update({now: recordNow, data, forecastRecord: {}}); assert.match(await toggle.getAttribute('title'), /기준 예측이 아직 없습니다/);
     await toggle.click(); await paint(); assert.equal(await page.locator('[data-forecast-record]').count(), 0);
     await update({now: recordNow, data, forecastRecord: snapshots, forecastEnabled: false}); assert.equal(await toggle.isHidden(), true);
     report.cases.push('forecast record toggle overlays one fixed baseline forecast per cycle (past solid, future faint) at the bottom-right without moving other UI');
+    report.cases.push('forecast record as-of view draws the forecast stored at the chosen time (one line per model and window), blends between snapshots, pins one comparison time and keeps the record panel from moving other UI');
     assert.deepEqual(report.errors, []); report.status = 'PASS';
   } finally {await browser.close(); fs.writeFileSync(path.join(root, 'test-forecast-ui.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));}
 })().catch(error => {console.error(error); process.exitCode = 1;});

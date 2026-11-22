@@ -342,6 +342,63 @@
     const a = startOf(prev), b = startOf(snap);
     return snap.at >= prev.reset || snap.reset - prev.reset >= every || a !== null && b !== null && b < a - 1;
   }
+  // CSS cubic-bezier(x1, y1, x2, y2) 와 같은 이징. x(0..1)를 받아 가중치(0..1)를 돌려준다.
+  function cubicBezier(x1, y1, x2, y2) {
+    const at = (t, a, b) => 3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+    return x => {
+      if (!(x > 0)) return 0;
+      if (!(x < 1)) return 1;
+      let lo = 0, hi = 1, t = x;
+      for (let i = 0; i < 40; i++) {t = (lo + hi) / 2; if (at(t, x1, x2) < x) lo = t; else hi = t;}
+      return at(t, y1, y2);
+    };
+  }
+  const easings = {smooth: cubicBezier(.65, 0, .35, 1), linear: x => Math.min(1, Math.max(0, x)), late: cubicBezier(.9, 0, .95, .3)};
+  const validSnapshot = snap => snap && finite(snap.at) && finite(snap.reset) && snap.reset > snap.at && Array.isArray(snap.points) && snap.points.length >= 2
+    && snap.points.every((p, i) => Array.isArray(p) && finite(p[0]) && finite(p[1]) && p[1] >= 0 && p[1] <= 100 && (i === 0 || p[0] > snap.points[i - 1][0]));
+  // 스냅샷의 예측선을 시각 t 에서 읽는다. 첫 점 이전은 첫 값, 마지막 점 이후는 마지막 값을 유지한다.
+  function snapshotValue(snap, t) {
+    const pts = snap.points;
+    if (t <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) if (t <= pts[i][0]) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (t - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]);
+    return pts.at(-1)[1];
+  }
+  // 예측 시각 S 에 기록돼 있던 예측: S 이전 마지막 스냅샷 A 와 다음 스냅샷 B 를 같은 주기 안에서만 베지어 가중치로 섞는다.
+  // 주기가 바뀌는 경계는 섞지 않는다. 이 주기에 아직 스냅샷이 없거나 S 가 A 의 초기화 이후면 선이 없다.
+  // 반환 모양은 baseline() 과 같고 blended 는 저장된 두 예측을 섞은 보정값인지 나타낸다.
+  function asOf(snapshots, at, {now, domain, basis = 'current', window = 'five', ease = easings.smooth} = {}) {
+    const rule = baselineWindows[window];
+    if (!Array.isArray(snapshots) || !finite(now) || !finite(at) || !rule) return [];
+    const valid = snapshots.filter(validSnapshot).sort((a, b) => a.at - b.at);
+    let index = -1;
+    for (let i = 0; i < valid.length; i++) if (valid[i].at <= at) index = i;
+    if (index < 0) return [];
+    const A = valid[index], next = valid[index + 1];
+    if (at >= A.reset || at >= now) return [];
+    const sameCycle = !!next && !cycleBreak(A, next, rule.every), tau = sameCycle ? Math.min(1, Math.max(0, (at - A.at) / (next.at - A.at))) : 0, w = tau > 0 ? ease(tau) : 0;
+    const lastA = A.points.at(-1)[0], limit = sameCycle && w > 0 ? Math.max(lastA, next.points.at(-1)[0]) : lastA;
+    const end = Math.min(A.reset, next && !sameCycle ? next.at : Infinity, limit);
+    if (!(end > at)) return [];
+    const value = time => w > 0 ? (1 - w) * snapshotValue(A, time) + w * snapshotValue(next, time) : snapshotValue(A, time);
+    const times = [...new Set([at, ...A.points.map(p => p[0]), ...(w > 0 ? next.points.map(p => p[0]) : []), end].filter(t => t >= at && t <= end))].sort((a, b) => a - b);
+    const factor = basis === 'base' && finite(A.mult) && A.mult > 0 ? A.mult : 1, point = (time, v) => ({time, value: v, y: v * factor});
+    const full = times.map(time => point(time, Math.min(100, value(time))));
+    if (full.length < 2) return [];
+    if (Array.isArray(domain) && (full.at(-1).time < domain[0] || full[0].time > domain[1])) return [];
+    const past = full.filter(p => p.time <= now), future = full.filter(p => p.time >= now), cut = full.findIndex(p => p.time > now);
+    if (cut > 0 && full[cut - 1].time < now) {
+      const a = full[cut - 1], b = full[cut], v = a.value + (b.value - a.value) * (now - a.time) / (b.time - a.time);
+      past.push(point(now, v)); future.unshift(point(now, v));
+    }
+    return [{at, reset: A.reset, start: A.reset - rule.span, known: basis !== 'base' || factor !== 1 || A.mult === 1, blended: tau > 0 && tau < 1, past: past.length >= 2 ? past : [], future: future.length >= 2 ? future : []}];
+  }
+  // 예측 시각을 고를 수 있는 범위: 가장 오래된 스냅샷(또는 지금-7일)부터 가장 최근 스냅샷까지.
+  function asOfRange(lists, now, span = 7 * day) {
+    const times = lists.flat().filter(validSnapshot).map(s => s.at).filter(t => t < now);
+    if (!times.length || !finite(now)) return null;
+    const hi = Math.max(...times), lo = Math.min(hi, Math.max(Math.min(...times), now - span));
+    return {lo, hi};
+  }
   function baseline(snapshots, {now, domain, basis = 'current', window = 'five'} = {}) {
     const rule = baselineWindows[window];
     if (!Array.isArray(snapshots) || !finite(now) || !rule) return [];
@@ -377,5 +434,5 @@
     }
     return lines;
   }
-  return {revision: 3, settings, estimate, accountStart, denoise, provider, present, remaining, summary, curve, baseline, cycleBreak};
+  return {revision: 3, settings, estimate, accountStart, denoise, provider, present, remaining, summary, curve, baseline, cycleBreak, asOf, asOfRange, cubicBezier, easings};
 });

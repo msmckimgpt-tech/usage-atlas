@@ -11,7 +11,7 @@
   const colors = {codex: 'var(--ua-a)', claude: 'var(--ua-b)'};
   const week = 7 * 86400000, minSpan = 60000;
   const providerVisibility = globalThis.usageAtlasProviderVisibility;
-  const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, paceRecord: false, range: null, details: null};
+  const defaults = {version: 6, mode: 'usage', basis: 'current', theme: 'system', hiddenProviders: [], credit: false, creditMode: 'money', creditBasis: 'subscription', refs: false, paceRecord: false, recordMode: 'asof', recordAt: null, recordPin: null, recordEase: 'smooth', recordFive: false, range: null, details: null};
   let state = {...defaults}, model = {now: Date.now(), data: {}}, raf, view, gesture = null, chartDrag = null, historyBusy = false;
   const initialNode = document.getElementById('ua-initial-data');
   if (initialNode) {const initial = JSON.parse(initialNode.textContent); if (initial?.type === 'data' && initial.data && Number.isFinite(initial.now)) model = initial; initialNode.remove();}
@@ -20,7 +20,10 @@
   const saved = api.getState();
   if ([3, 4, 5, 6].includes(saved?.version)) {
     for (const [key, values] of Object.entries({mode: ['usage', 'delta', 'total'], basis: ['current', 'base'], theme: ['system', 'light', 'dark'], creditMode: ['money', 'estimate']})) if (values.includes(saved[key])) state[key] = saved[key];
-    for (const key of ['credit', 'refs', 'paceRecord']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
+    for (const key of ['credit', 'refs', 'paceRecord', 'recordFive']) if (typeof saved[key] === 'boolean') state[key] = saved[key];
+    for (const key of ['recordAt', 'recordPin']) if (Number.isFinite(saved[key])) state[key] = saved[key];
+    if (['asof', 'base'].includes(saved.recordMode)) state.recordMode = saved.recordMode;
+    if (['smooth', 'linear', 'late'].includes(saved.recordEase)) state.recordEase = saved.recordEase;
     if (Array.isArray(saved.range) && saved.range.length === 2 && saved.range.every(Number.isFinite) && saved.range[0] < saved.range[1]) state.range = [...saved.range];
     if (Number.isSafeInteger(saved.historyVersion) && saved.historyVersion >= 0) state.historyVersion = saved.historyVersion;
     if (saved.details && typeof saved.details === 'object' && saved.details.open === true && saved.details.selection && typeof saved.details.selection === 'object') state.details = saved.details;
@@ -32,7 +35,27 @@
   const displayCreditMode = () => state.creditBasis === 'billing' ? 'money' : state.creditMode;
   // 예측 기록은 원단위 사용률로 저장하므로 같은 축을 쓰는 사용률 보기에서만 겹쳐 그릴 수 있다.
   const recordUsable = () => state.mode === 'usage' && !(state.credit && displayCreditMode() === 'estimate');
-  const recordTitle = count => !recordUsable() ? '예측 기록은 사용률 보기에서 표시합니다. 추가 크레딧을 사용량에 누적하는 보기에서는 표시하지 않습니다.' : state.paceRecord && !count ? '표시 구간에 기준 예측이 아직 없습니다. 5시간 창은 주기 시작 30분 뒤, 주간 창은 6시간 뒤의 예측을 기준으로 남깁니다.' : '주기마다 하나로 고정한 기준 예측(5시간 창은 주기 시작 30분 뒤, 주간 창은 6시간 뒤의 예측)을 실제 사용량 위에 겹쳐 소진 모양을 비교합니다.' + (state.paceRecord ? ' 표시 중 ' + count + '개.' : '');
+  // 예측 시각 보기: 고른 시각에 기록돼 있던 예측을 보이고, 패널에서 시각·고정 비교·이어 붙이는 곡선·5시간 창을 조절한다.
+  let recordShownAt = null;
+  const recordAgo = ms => {const hours = Math.max(0, Math.round(ms / 3600000)); return hours < 48 ? hours + '시간 전' : Math.floor(hours / 24) + '일 ' + hours % 24 + '시간 전';};
+  const syncRecordPanel = (range, at, lines, domain) => {
+    const panel = el('record-panel'), asof = state.recordMode !== 'base';
+    panel.hidden = !(state.paceRecord && model.forecastEnabled !== false && recordUsable());
+    el('record-asof').setAttribute('aria-pressed', String(asof)); el('record-base').setAttribute('aria-pressed', String(!asof));
+    el('record-controls').hidden = !asof;
+    if (panel.hidden || !asof) return;
+    const slider = el('record-time'), usable = !!range && at !== null;
+    slider.disabled = !usable; el('record-latest').disabled = !usable;
+    // 10분 간격 눈금. 끝 눈금은 최신 예측을 뜻한다(눈금에 안 맞는 최신 시각 때문에 끝에 못 닿지 않게 끝을 눈금에 맞춘다).
+    if (usable) {slider.min = String(range.lo); slider.step = '600000'; slider.max = String(range.lo + Math.floor((range.hi - range.lo) / 600000) * 600000); slider.value = String(at);}
+    const pin = state.recordPin !== null && range && state.recordPin >= range.lo && state.recordPin <= range.hi ? state.recordPin : null;
+    el('record-pin').setAttribute('aria-pressed', String(pin !== null)); el('record-pin').textContent = pin !== null ? '고정 해제' : '고정해 비교';
+    el('record-ease').value = state.recordEase; el('record-five').checked = state.recordFive;
+    recordShownAt = at;
+    el('record-label').textContent = !usable ? '기록된 예측이 아직 없습니다.' : '예측 시각 ' + fmt(at) + ' (' + recordAgo(model.now - at) + ')' + (lines.some(l => !l.pin && l.blended) ? ' · 저장된 두 예측 사이를 보정한 값' : '') + (pin !== null ? ' · 고정 ' + fmt(pin) : '') + (domain && at < domain[0] ? ' · 표시 기간 밖' : '');
+  };
+  const recordTitleBase = count => !recordUsable() ? '예측 기록은 사용률 보기에서 표시합니다. 추가 크레딧을 사용량에 누적하는 보기에서는 표시하지 않습니다.' : state.paceRecord && !count ? '표시 구간에 기준 예측이 아직 없습니다. 5시간 창은 주기 시작 30분 뒤, 주간 창은 6시간 뒤의 예측을 기준으로 남깁니다.' : '주기마다 하나로 고정한 기준 예측(5시간 창은 주기 시작 30분 뒤, 주간 창은 6시간 뒤의 예측)을 실제 사용량 위에 겹쳐 소진 모양을 비교합니다.' + (state.paceRecord ? ' 표시 중 ' + count + '개.' : '');
+  const recordTitle = count => state.recordMode === 'base' || !recordUsable() ? recordTitleBase(count) : state.paceRecord && !count ? '고른 시각에 기록된 예측이 표시 구간에 없습니다. 주간 창은 6시간, 5시간 창은 1시간마다 예측을 남깁니다.' : '고른 시각에 기록돼 있던 예측을 실제 사용량 위에 겹쳐 소진 모양을 비교합니다. 패널에서 예측 시각을 바꿉니다.' + (state.paceRecord ? ' 표시 중 ' + count + '개.' : '');
   let hoveredProvider = null, emphasizedTarget = null, hoverPosition = null, lastEmphasizedSeries = null;
   let lastTipKey = '', tipW = 0, tipH = 0;
   // 기호 경로 문자열은 모양·크기마다 한 번만 만든다. 위치는 transform으로 옮긴다.
@@ -322,10 +345,24 @@
       return {id, w, ...curve};
     })).filter(s => s && s.points.at(-1).time >= domain[0] && s.points[0].time <= domain[1]);
     // 예측 기록: 지나간 시간의 과거 예측선을 실제 사용량 위에 겹친다. 사용률 보기에서만 같은 축으로 비교할 수 있다.
-    const recordLines = state.paceRecord && model.forecastEnabled !== false && recordUsable() ? visible.flatMap(id => ['five', 'week'].flatMap(w => forecasts.baseline(model.forecastRecord?.[id]?.[w], {now: model.now, domain, basis: state.basis, window: w}).map(line => ({id, w, ...line})))) : [];
-    const recordTrends = recordLines.flatMap(line => ['past', 'future'].filter(part => line[part].length).map(part => ({id: line.id, w: line.w, known: line.known, at: line.at, part, points: line[part].map((p, i) => ({...p, continuous: i > 0}))})));
+    const recordOn = state.paceRecord && model.forecastEnabled !== false && recordUsable();
+    // 기준 고정: 주기마다 하나로 고정한 기준 예측. 예측 시각: 고른 시각에 기록돼 있던 예측(스냅샷 사이는 베지어로 보정).
+    let recordLines = [], recordRange = null, recordAtTime = null;
+    if (recordOn && state.recordMode === 'base') recordLines = visible.flatMap(id => ['five', 'week'].flatMap(w => forecasts.baseline(model.forecastRecord?.[id]?.[w], {now: model.now, domain, basis: state.basis, window: w}).map(line => ({id, w, ...line}))));
+    else if (recordOn) {
+      const windows = state.recordFive ? ['five', 'week'] : ['week'];
+      recordRange = forecasts.asOfRange(visible.flatMap(id => windows.map(w => model.forecastRecord?.[id]?.[w] || [])), model.now);
+      if (recordRange) {
+        recordAtTime = state.recordAt === null || state.recordAt >= recordRange.hi ? recordRange.hi : Math.max(recordRange.lo, state.recordAt);
+        const ease = forecasts.easings[state.recordEase] || forecasts.easings.smooth, pinTime = state.recordPin !== null && state.recordPin >= recordRange.lo && state.recordPin <= recordRange.hi ? state.recordPin : null;
+        const linesAt = (at, pin) => visible.flatMap(id => windows.flatMap(w => forecasts.asOf(model.forecastRecord?.[id]?.[w], at, {now: model.now, domain, basis: state.basis, window: w, ease}).map(line => ({id, w, pin, ...line}))));
+        recordLines = [...linesAt(recordAtTime, false), ...(pinTime === null ? [] : linesAt(pinTime, true))];
+      }
+    }
+    const recordTrends = recordLines.flatMap(line => ['past', 'future'].filter(part => line[part].length).map(part => ({id: line.id, w: line.w, known: line.known, at: line.at, pin: !!line.pin, blended: !!line.blended, part, points: line[part].map((p, i) => ({...p, continuous: i > 0}))})));
     const rangeExtents = forecastTrends.flatMap(s => ['low','high'].map(field => ({...s, points: (s.range || []).map((p,i)=>({time:p.time,y:p[field],continuous:i>0}))})));
     el('pace-record').title = recordTitle(recordLines.length); el('pace-record').dataset.recordCount = recordLines.length;
+    syncRecordPanel(recordRange, recordAtTime, recordLines, domain);
     const plotted = [...data, ...nativeData.filter(s => !s.billing), ...forecastTrends, ...rangeExtents, ...recordTrends.filter(s => s.part === 'past')];
     const {rawTotal, split, refs, maximum, unscaledMaximum} = chartGraphs.limits(plotted, domain, state);
     const units = [...new Set(nativeCredits.map(creditUnit))];
@@ -469,11 +506,11 @@
       return curve ? scale(curve)(curve.points.at(-1).y) : Math.min(bottom - 6, top + 40 + (p.w === 'week' ? 14 : 0));
     };
     const recordGroups = new Map();
-    for (const s of recordTrends) {const group = s.id + '-' + s.w + '-' + (split && !s.known ? 'raw' : 'scaled') + '-' + s.part; if (!recordGroups.has(group)) recordGroups.set(group, []); recordGroups.get(group).push(s);}
+    for (const s of recordTrends) {const group = s.id + '-' + s.w + '-' + (split && !s.known ? 'raw' : 'scaled') + '-' + s.part + (s.pin ? '-pin' : ''); if (!recordGroups.has(group)) recordGroups.set(group, []); recordGroups.get(group).push(s);}
     for (const [group, lines] of recordGroups) {
       // 지나간 구간은 실제선과 비교할 수 있게 진하게, 지금 이후 구간은 남은 예상 모양만 흐리게 그린다.
       const s = lines[0], ys = scale(s), key = s.id + '-' + s.w, lineGen = d3.line().x(p => x(p.time)).y(p => ys(p.y)), op = s.part === 'past' ? .8 : .35;
-      addTrace(g.append('path').attr('data-forecast-record', key).attr('data-record-group', group).attr('data-record-part', s.part).attr('data-record-count', lines.length).attr('d', lines.map(line => lineGen(line.points)).join('')).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', 1.3).attr('stroke-dasharray', s.w === 'week' ? '4 2 1 2' : '1 2').attr('opacity', op).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('pointer-events', 'none').attr('aria-hidden', 'true'), key, s.id, false, op);
+      addTrace(g.append('path').attr('data-forecast-record', key).attr('data-record-group', group).attr('data-record-part', s.part).attr('data-record-count', lines.length).attr('d', lines.map(line => lineGen(line.points)).join('')).attr('fill', 'none').attr('stroke', colors[s.id]).attr('stroke-width', 1.3).attr('stroke-dasharray', s.pin ? '7 3' : s.w === 'week' ? '4 2 1 2' : '1 2').attr('data-record-pin', s.pin ? 'true' : null).attr('data-record-blended', lines.some(line => line.blended) ? 'true' : null).attr('opacity', op).attr('vector-effect', 'non-scaling-stroke').attr('stroke-linecap', 'round').attr('pointer-events', 'none').attr('aria-hidden', 'true'), key, s.id, false, op);
       // 기준 예측을 만든 시점을 작은 점으로 표시한다.
       if (s.part === 'past') for (const line of lines) {const p = line.points[0]; if (p.time >= domain[0] && p.time <= domain[1]) addTrace(g.append('circle').attr('data-record-anchor', key).attr('data-record-at', p.time).attr('cx', x(p.time)).attr('cy', ys(p.y)).attr('r', 2.5).attr('fill', colors[s.id]).attr('opacity', .8).attr('pointer-events', 'none').attr('aria-hidden', 'true'), key, s.id, false, .8);}
     }
@@ -754,6 +791,14 @@
   for (const key of ['mode', 'basis']) el(key).addEventListener('change', () => {state[key] = el(key).value; save(); requestDraw();});
   for (const key of ['credit', 'refs']) el(key).addEventListener('change', () => {state[key] = el(key).checked; save(); requestDraw();});
   el('pace-record').addEventListener('click', () => {state.paceRecord = !state.paceRecord; save(); requestDraw();});
+  const recordChange = update => {update(); save(); requestDraw();};
+  el('record-asof').addEventListener('click', () => recordChange(() => {state.recordMode = 'asof';}));
+  el('record-base').addEventListener('click', () => recordChange(() => {state.recordMode = 'base';}));
+  el('record-time').addEventListener('input', event => recordChange(() => {const input = event.currentTarget; state.recordAt = +input.value >= +input.max ? null : +input.value;}));
+  el('record-latest').addEventListener('click', () => recordChange(() => {state.recordAt = null;}));
+  el('record-pin').addEventListener('click', () => recordChange(() => {state.recordPin = state.recordPin === null && recordShownAt !== null ? recordShownAt : null;}));
+  el('record-ease').addEventListener('change', event => recordChange(() => {state.recordEase = event.currentTarget.value;}));
+  el('record-five').addEventListener('change', event => recordChange(() => {state.recordFive = event.currentTarget.checked;}));
   for (const basis of ['subscription', 'billing']) el('credit-' + basis).addEventListener('change', event => {if (!event.target.checked) return; state.creditBasis = basis; basisPending = basis; save(); api.postMessage({type: 'creditBasis', value: basis}); requestDraw();});
   el('credit-mode').addEventListener('change', () => {state.creditMode = el('credit-mode').value; save(); requestDraw();});
   function bindProvider(id) {

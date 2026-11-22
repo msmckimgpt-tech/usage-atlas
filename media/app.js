@@ -722,7 +722,7 @@
     hit.on('pointercancel', cancelPress); hit.on('lostpointercapture', () => {if (press) cancelPress();});
     hit.on('pointerleave', () => {if (down === null) clear();});
     hit.on('dblclick', e => {if (e.button === 0) resetRange();});
-    hit.on('focus', () => frame.classed('ua-focus', true)); hit.on('blur', () => {frame.classed('ua-focus', false); clear();});
+    hit.on('focus', () => frame.classed('ua-focus', hit.node().matches(':focus-visible'))); hit.on('blur', () => {frame.classed('ua-focus', false); clear();});
     hit.on('keydown', e => {
       const span = domain[1] - domain[0];
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') show(x(Math.max(domain[0], Math.min(domain[1], cursor + span / 100 * (e.key === 'ArrowLeft' ? -1 : 1)))));

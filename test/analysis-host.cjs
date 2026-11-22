@@ -315,12 +315,12 @@ exports.run = async () => {
     };
     const tableText = async () => [...(await tableSvg()).matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(m => m[1]).join(' | ');
     const tableRows = async () => ((await tableSvg()).match(/<line /g) || []).length;
-    const tableNames = async () => [...(await tableSvg()).matchAll(/<text x="0" y="[^"]*">([^<]*)<\/text>/g)].map(m => m[1]);
+    const tableNames = async () => [...(await tableSvg()).matchAll(/<text x="15" y="[^"]*">([^<]*)<\/text>/g)].map(m => m[1]);
     assert.match(await tableText(), /사용 가능 ≈/); assert.equal(await tableRows(), 2, 'two model rows');
     const forecastImage = forecastHover.locator('img[alt="AI 서비스별 최근 5시간 사용률"]'); await forecastImage.evaluate(n => n.decode());
-    assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360); assert.equal(await forecastImage.evaluate(n => n.naturalHeight), 192);
+    assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360); assert.equal(await forecastImage.evaluate(n => n.naturalHeight), 176);
     await forecastHover.screenshot({path: path.join(root, 'screenshots/forecast-preview-native.png')});
-    result.forecast = {pageMarkers: 4, trendPaths: 4, previewRemainingTime: true, previewRows: 2, imageWidth: 360, imageHeight: 192};
+    result.forecast = {pageMarkers: 4, trendPaths: 4, previewRemainingTime: true, previewRows: 2, imageWidth: 360, imageHeight: 176};
     await workbench.mouse.move(10, 10);
     for (const row of forecastRecords) if (row.provider === 'claude') for (const w of ['five', 'week']) row.windows[w].reset = forecastNow + 1800000;
     await new Store(api.storagePath).withLock(async () => {

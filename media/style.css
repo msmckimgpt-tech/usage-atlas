@@ -115,7 +115,8 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 #usage-atlas #ua-settings{margin-left:auto}
 
 #usage-atlas [data-details-line]{pointer-events:none}
-#usage-atlas [data-details-line]:focus-visible{outline:none;stroke:var(--ua-focus);stroke-width:4;opacity:1}
+#usage-atlas #ua-chart [tabindex]:focus,#usage-atlas #ua-chart [tabindex]:focus-visible{outline:none}
+#usage-atlas [data-details-line]:focus-visible,#usage-atlas [data-forecast-trend]:focus-visible{outline:none;stroke:var(--ua-focus);stroke-width:4;opacity:1}
 
 #usage-atlas .ua-trace{transition:opacity .18s cubic-bezier(.22,1,.36,1)}
 #usage-atlas .ua-muted-trace{opacity:calc(var(--ua-trace-opacity,1) * .18)}

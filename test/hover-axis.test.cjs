@@ -14,7 +14,7 @@ test('mini axis uses whole 24-hour labels, weekdays, and exact hourly positions 
   assert.deepEqual(texts(p.svg, 'date-tick').map(label => label.text), ['20일(화)']);
   assert.match(p.svg, /data-day-ticks="0"/); assert.match(p.svg, /data-hour-ticks="5"/);
   assert.doesNotMatch(p.svg, />\d{2}:\d{2}</);
-  assert.match(p.svg, /width="360" height="192"/);
+  assert.match(p.svg, /width="360" height="176"/);
 });
 test('midnight gets one large tick, no duplicate small tick, and two dates aligned with the true boundary', () => {
   const now = +new Date(2026, 9, 20, 0, 30), p = preview([], {now});

@@ -108,7 +108,7 @@ test('preview model cells contain only compact names without collector errors or
   const markdown = h.markdowns.at(-1).value;
   const table = [...markdown.matchAll(/!\[모델별 5시간·주간 사용량\]\(data:image\/svg\+xml;base64,([^)]+)\)/g)].map(match => Buffer.from(match[1], 'base64').toString('utf8'))[0];
   assert.ok(table, '모델별 표 SVG 가 있어야 한다');
-  const cells = [...table.matchAll(/<text x="0" y="[\d.]+">(.*?)<\/text>/g)].map(match => match[1]);
+  const cells = [...table.matchAll(/<text x="15" y="[\d.]+">(.*?)<\/text>/g)].map(match => match[1]);
   assert.deepEqual(cells, ['Codex', 'Claude Code', 'AGY Gemini']);
   assert.doesNotMatch(markdown + table, /구독 계정|기록 지연|기록지연|<small>/);
   assert.equal(h.api.snapshot().data.claude.status.message, message);

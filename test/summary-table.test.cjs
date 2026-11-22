@@ -22,3 +22,8 @@ test('100%를 넘는 값은 칸 너비로 제한하고 이름은 이스케이프
 test('예측을 끄면 한 줄만 표시한다', () => {
   assert.doesNotMatch(summaryTable(rows, {forecastEnabled: false}), /사용 가능/);
 });
+test('범례 대신 표의 모델 이름 앞에 색 표식을 둔다', () => {
+  const svg = summaryTable([{...rows[0], marker: 'circle'}, {...rows[1], marker: 'diamond'}]);
+  assert.match(svg, /<circle data-legend-marker="Codex"[^>]*fill="#62d0d8"/);
+  assert.match(svg, /<path data-legend-marker="AGY &lt;Gemini&gt;"[^>]*fill="#80c080"/);
+});

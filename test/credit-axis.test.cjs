@@ -47,14 +47,14 @@ test('missing conversion never promotes a native credit range to 0..100 percent'
   const trace = creditGraphs.series(data.codex, 'codex').find(s => s.creditWindow === 'five');
   assert.equal(trace.points.at(-1).y, null); assert.equal(trace.points.at(-1).amount, 100);
   const svg = preview(f.records, {now, projection: data}).svg;
-  const credit = path(svg, 'codex-credit-five'); if (credit) for (const match of credit.matchAll(/[ML][\d.-]+,([\d.-]+)/g)) near(Number(match[1]), 154);
+  const credit = path(svg, 'codex-credit-five'); if (credit) for (const match of credit.matchAll(/[ML][\d.-]+,([\d.-]+)/g)) near(Number(match[1]), 138);
 });
 test('preview extends one common scale when converted credits exceed 100 percent', () => {
   const f = fixture(); f.records[2].creditBalance = 100;
   f.model = buildConversion({...f, now}); f.data = project(f.records, f.capacities, undefined, converter(f.model));
   const svg = preview(f.records, {now, projection: f.data}).svg;
   const max = Number(svg.match(/data-y-max="([\d.]+)"/)[1]); near(max, 225 * 1.08);
-  const expected = 154 - 25 / max * 126;
+  const expected = 138 - 25 / max * 126;
   near(endY(path(svg, 'codex-five')), expected);
 });
 test('unknown capacity and plan changes cannot silently add incompatible lifetime percentages', () => {

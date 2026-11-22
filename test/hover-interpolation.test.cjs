@@ -39,9 +39,9 @@ test('left boundary retains an anchor beyond the old maxGap cutoff and clips int
   const rows = ['codex', 'claude'].flatMap(provider => [row(provider, 6, 20), row(provider, 4, 40)]).sort((a, b) => a.time - b.time);
   const p = preview(rows, {now});
   for (const provider of ['codex', 'claude']) {
-    assert.equal(trace(p.svg, `${provider}-five`), 'M34.0,119.0L97.2,107.3');
-    assert.equal(trace(p.svg, `${provider}-week`), 'M34.0,119.0L97.2,107.3');
-    assert.equal(trace(p.svg, `${provider}-credit`), 'M34.0,142.3L97.2,130.7');
+    assert.equal(trace(p.svg, `${provider}-five`), 'M34.0,103.0L97.2,91.3');
+    assert.equal(trace(p.svg, `${provider}-week`), 'M34.0,103.0L97.2,91.3');
+    assert.equal(trace(p.svg, `${provider}-credit`), 'M34.0,126.3L97.2,114.7');
   }
 });
 test('preview never bridges resets, counter corrections, account or plan changes, capacity changes, topups or USD month boundaries', () => {

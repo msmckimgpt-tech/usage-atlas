@@ -27,7 +27,7 @@ test('preview uses the supplied page projection for both quota coordinates and s
   const result = preview(rows, {now, projection});
   const path = result.svg.match(/data-series="codex-five"><path d="([^"]*)"/)[1];
   const y = Number([...path.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].at(-1)[1]);
-  assert.ok(Math.abs(y - (154 - 10 / 108 * 126)) < .06);
+  assert.ok(Math.abs(y - (138 - 10 / 108 * 126)) < .06);
   assert.equal(result.summaries[0].five, '20%');
 });
 test('shared quota transformations preserve source data in all modes and comparison bases', () => {

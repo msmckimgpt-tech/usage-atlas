@@ -8,7 +8,7 @@ const http = require('node:http');
 const ag = require('../src/antigravity.cjs');
 const {hash, sanitize, project, Store} = require('../src/core.cjs');
 const catalog = require('../media/provider-visibility.js');
-const {preview} = require('../src/hover.cjs');
+const {preview, summaryTable} = require('../src/hover.cjs');
 const {selection} = require('../src/details-selection.cjs');
 const {wakeDelay} = require('../src/schedule.cjs');
 const {analyze} = require('../src/analytics.cjs');
@@ -50,7 +50,7 @@ test('new group snapshots round trip without secrets, isolate accounts and prese
   const chart = require('../media/chart-series.js');
   assert.equal(chart.quota(data[id], id, 'five', {credit: true, creditMode: 'estimate'})[0].points.at(-1).y, 25);
   const svg = preview(restored, {now, projection: data}); assert.equal(svg.summaries.length, 5); assert.equal(svg.summaries.find(s => s.name === 'AGY Gemini').five, '25%');
-  assert.match(svg.svg, /AGY Gemini/); assert.match(svg.svg, new RegExp('data-series="' + id + '-five"'));
+  assert.match(summaryTable(svg.summaries), /AGY Gemini/); assert.match(svg.svg, new RegExp('data-series="' + id + '-five"'));
   assert.doesNotMatch(await fs.readFile(path.join(dir, 'history.jsonl'), 'utf8'), /email|Token|apiKey|profilePicture/);
   const report = analyze({provider: id, account: account.account, window: 'five', start: now - 120000, end: now + 1, cursorTime: now, records: restored});
   assert.equal(report.summary.callCount, null); assert.equal(report.quotaOnly, true); assert.equal(report.observations.items[0].used, 25); assert.ok(report.coverage.notes.some(n => n.includes('Antigravity')));

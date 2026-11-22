@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {hash, thin} = require('../src/core.cjs');
-const {preview, resetRemaining} = require('../src/hover.cjs');
+const {preview, resetRemaining, summaryTable} = require('../src/hover.cjs');
 const now = Date.now(), hour = 3600000;
 const sample = (ago, value, reset = now + hour, account = 'one') => ({v: 1, provider: 'codex', account: hash(account), time: now - ago * hour, plan: 'test', windows: {five: {used: value, reset}, week: null}});
 
@@ -14,7 +14,7 @@ test('preview names are compact while page names and quota values are preserved'
     const records = [{...sample(.1, 24), provider: id, label}];
     const result = preview(records, {now});
     assert.equal(result.summaries.find(row => row.name === 'AGY ' + label).five, '24%');
-    assert.match(result.svg, /AGY /); assert.doesNotMatch(result.svg, /Antigravity/);
+    assert.doesNotMatch(result.svg, /Antigravity/); assert.match(summaryTable(result.summaries), /AGY /);
   }
   assert.equal(names.previewName('antigravity'), 'AGY');
   assert.equal(names.previewName('codex'), 'Codex'); assert.equal(names.previewName('claude'), 'Claude Code');

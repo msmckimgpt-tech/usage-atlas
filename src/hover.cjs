@@ -36,7 +36,8 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
   const convert = converter(conversion), bill = billing.enricher();
   const projected = projection || project(history, capacities, maxGap, (...args) => {convert(...args); bill(...args);});
   const providers = Object.keys(projected).filter(id => providerCatalog.enabled(id, projected[id], visibility)), names = Object.fromEntries(providers.map(id => [id, providerCatalog.previewName(id, projected[id]?.last?.label)]));
-  const legendRows = providers.length > 2 ? providers.length : 1, top = 28 + (legendRows - 1) * 16, height = 192 + (legendRows - 1) * 16;
+  // 모델 범례는 아래 표의 색 표식이 대신하므로 그래프 위에는 두지 않는다.
+  const top = 12, height = 176;
   const quotas = providers.flatMap(id => ['five', 'week'].flatMap(w => chartGraphs.quota(projected[id], id, w, {antigravitySmoothingMinutes}))).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const credits = providers.flatMap(id => creditGraphs.series(projected[id], id, {creditBasis})).map(s => ({...s, points: s.points.filter(p => p.time <= now)}));
   const allSeries = [...quotas, ...credits].map(s => ({...s, bridges: gaps.bridges(s.points, 'y')}));
@@ -63,12 +64,11 @@ function preview(records, {now = Date.now(), dark = false, capacities = [], coll
     if (path) parts.push(`<path clip-path="url(#plot)" data-interpolated="${key}" d="${path}" stroke="${color}" stroke-width=".75" stroke-dasharray="3 4" opacity=".5"/>`);
   };
   for (const value of ticks) {parts.push(`<line x1="${left}" x2="${right}" y1="${y(value)}" y2="${y(value)}" stroke="${palette.grid}"/>`); text(percent(value), left - 5, y(value) + 4, 'end', ' data-y-label=""');}
-  for (const [i, id] of providers.entries()) {const px = providers.length > 2 ? left : left + i * 155, py = providers.length > 2 ? i * 16 : 0; parts.push(id === 'codex' ? `<circle cx="${px + 4}" cy="${12 + py}" r="3" fill="${palette[id]}"/>` : `<path d="M${px + 4} ${8 + py}l4 4-4 4-4-4Z" style="fill:${palette[id]}"/>`); text(names[id], px + 13, 16 + py);}
   if (creditBasis === 'billing') {text('금액 %', right, top - 5, 'end', ' data-billing-axis=""'); for (const value of [0, feeMaximum / 2, feeMaximum]) text(percent(value), right - 2, by(value) + 4, 'end', ' data-billing-tick=""');}
   const summaries = []; let visible = 0;
   for (const id of providers) {
     const provider = projected[id], last = provider?.last?.time <= now ? provider.last : history.findLast(r => r.provider === id);
-    const summary = {name: names[id], color: palette[id], used: {five: null, week: null}, five: '-', week: '-', resets: {five: '-', week: '-'}, status: collectors[id]?.message || '수집 대기', observed: last ? date.format(last.time) : '-'};
+    const summary = {name: names[id], color: palette[id], marker: id === 'codex' ? 'circle' : 'diamond', used: {five: null, week: null}, five: '-', week: '-', resets: {five: '-', week: '-'}, status: collectors[id]?.message || '수집 대기', observed: last ? date.format(last.time) : '-'};
     if (last && now - last.time > staleAfterMs) summary.status += ' · 기록 지연';
     for (const w of ['five', 'week']) {
       const value = last?.windows[w]?.used;
@@ -141,7 +141,9 @@ function summaryTable(summaries, {dark = false, forecastEnabled = true} = {}) {
   for (const [i, s] of summaries.entries()) {
     const top = head + i * rowH;
     parts.push(`<line x1="0" x2="${width}" y1="${top}" y2="${top}" stroke="${line}" stroke-width=".6"/>`);
-    parts.push(`<text x="0" y="${top + 24}">${escape(s.name)}</text>`);
+    const my = top + rowH / 2;
+    parts.push(s.marker === 'circle' ? `<circle data-legend-marker="${escape(s.name)}" cx="4" cy="${my}" r="3.5" fill="${s.color || ink}"/>` : `<path data-legend-marker="${escape(s.name)}" d="M4 ${my - 4.5}l4.5 4.5-4.5 4.5-4.5-4.5Z" fill="${s.color || ink}"/>`);
+    parts.push(`<text x="15" y="${top + 24}">${escape(s.name)}</text>`);
     for (const [column, w] of ['five', 'week'].entries()) {
       const x0 = cell(column, w), used = s.used?.[w], ratio = number(used) ? Math.max(0, Math.min(100, used)) / 100 : 0;
       parts.push(`<rect x="${x0 + 1}" y="${top + 3}" width="${colW - 2}" height="${rowH - 6}" rx="3" fill="${track}" opacity=".06"/>`);

@@ -49,3 +49,11 @@ test('display switches live together in the ordered native settings category wit
   assert.equal(Object.keys(props).length, 6);
   for (const key of Object.values(visibility.displaySettings)) {const property = props['usageAtlas.' + key]; assert.equal(property.type, 'boolean'); assert.equal(property.default, true); assert.ok(Number.isFinite(property.order));}
 });
+test('solo (Ctrl+click) shows only the clicked model and a second solo restores all', () => {
+  const ids = ['codex', 'claude', 'future-third'];
+  let hidden = visibility.solo(ids, [], 'claude'); assert.deepEqual(visibility.visible(ids, hidden), ['claude']);
+  hidden = visibility.solo(ids, ['codex'], 'future-third'); assert.deepEqual(visibility.visible(ids, hidden), ['future-third']);
+  assert.deepEqual(visibility.solo(ids, hidden, 'future-third'), []);
+  hidden = visibility.solo(ids, ['codex', 'claude', 'future-third'], 'codex'); assert.deepEqual(visibility.visible(ids, hidden), ['codex']);
+  assert.deepEqual(visibility.solo(ids, ['codex'], 'unknown'), ['codex']);
+});

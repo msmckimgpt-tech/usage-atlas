@@ -8,6 +8,11 @@
     if (!ids.includes(clicked)) return [...hidden];
     return hidden.includes(clicked) ? hidden.filter(id => id !== clicked) : [...hidden, clicked];
   }
+  function solo(ids, hidden = [], clicked) {
+    if (!ids.includes(clicked)) return [...hidden];
+    const only = ids.every(id => (id === clicked) !== hidden.includes(id));
+    return only ? [] : ids.filter(id => id !== clicked);
+  }
   function restore(ids, saved) {
     if (saved?.version === 6 && Array.isArray(saved.hiddenProviders)) return [...new Set(saved.hiddenProviders.filter(id => typeof id === 'string' && (ids.includes(id) || valid(id) || id === 'antigravity')))].slice(0, 128);
     if (saved?.version === 5) return ids.includes(saved.focusedProvider) ? ids.filter(id => id !== saved.focusedProvider) : [];
@@ -54,5 +59,5 @@
     const key = groupSettings[id] || ({Gemini: 'showAntigravityGemini', 'Claude/GPT': 'showAntigravityClaudeGpt', Argon: 'showAntigravityArgon'}[label]);
     return !key || options[key] !== false;
   }
-  return {visible, toggle, restore, valid, isAntigravity, ids, name, previewName, color, displaySettings, settings, enabled};
+  return {visible, toggle, solo, restore, valid, isAntigravity, ids, name, previewName, color, displaySettings, settings, enabled};
 });

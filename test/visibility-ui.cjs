@@ -30,6 +30,8 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     assert.deepEqual(await page.locator('#ua-chart').boundingBox(), geometry);
     await page.mouse.move(0, 0); assert.equal(await page.locator('.ua-highlight-trace,.ua-muted-trace').count(), 0);
     report.perSeriesHover = true;
+    const allSelected = await selected(); await page.locator('#ua-claude').click({modifiers: ['Control']}); await paint(); assert.deepEqual(await selected(), ['claude']);
+    await page.locator('#ua-claude').click({modifiers: ['Control']}); await paint(); assert.deepEqual(await selected(), allSelected); report.ctrlClickSolo = true;
     await page.locator('#ua-nav-pan').focus(); await page.keyboard.press('+'); await paint(); const originalRange = await range();
     for (const id of ['codex', ids[1]]) await page.locator('#ua-' + id).click(); await paint();
     assert.deepEqual(await selected(), ['claude', ids[0], ids[2]]); assert.deepEqual(await range(), originalRange);

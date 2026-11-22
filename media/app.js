@@ -802,7 +802,7 @@
   for (const basis of ['subscription', 'billing']) el('credit-' + basis).addEventListener('change', event => {if (!event.target.checked) return; state.creditBasis = basis; basisPending = basis; save(); api.postMessage({type: 'creditBasis', value: basis}); requestDraw();});
   el('credit-mode').addEventListener('change', () => {state.creditMode = el('credit-mode').value; save(); requestDraw();});
   function bindProvider(id) {
-    el(id).addEventListener('click', () => {state.hiddenProviders = providerVisibility.toggle(ids, state.hiddenProviders, id); hoveredProvider = null; save(); requestDraw();});
+    el(id).addEventListener('click', event => {state.hiddenProviders = (event.ctrlKey || event.metaKey ? providerVisibility.solo : providerVisibility.toggle)(ids, state.hiddenProviders, id); hoveredProvider = null; save(); requestDraw();});
     for (const event of ['pointerenter', 'focus']) el(id).addEventListener(event, () => {hoveredProvider = id; emphasize(id);});
     for (const event of ['pointerleave', 'blur']) el(id).addEventListener(event, () => {hoveredProvider = null; emphasize(null);});
   }

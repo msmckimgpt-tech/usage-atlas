@@ -50,6 +50,13 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     assert.ok(await page.locator('#ua-chart').evaluate(n => n.getBoundingClientRect().height >= 200));
     await page.screenshot({path: path.join(root, 'screenshots/antigravity-narrow.png')});
+    // 글꼴 폭이 달라도(Linux CI) 긴 요금제 이름이 제목 줄을 넘치게 하지 않아야 한다.
+    await page.setViewportSize({width: 320, height: 760}); await stable();
+    await page.evaluate(() => {for (const n of document.querySelectorAll('.ua-plan')) n.textContent = 'a-very-long-plan-name-for-overflow-check'; for (const n of document.querySelectorAll('.ua-provider-head strong')) n.textContent = 'Long Model Name For Overflow Check';});
+    for (const card of await page.locator('.ua-provider').all()) {
+      const box = await card.evaluate(n => ({card: n.scrollWidth > n.clientWidth, head: (h => h.scrollWidth > h.clientWidth)(n.querySelector('.ua-provider-head')), lines: Math.round(n.querySelector('.ua-provider-head').getBoundingClientRect().height)}));
+      assert.ok(!box.card && !box.head && box.lines < 24, 'provider head stays on one line without overflow at 320px');
+    }
     const noisy = Array.from({length: 121}, (_, i) => ({v: 1, provider: ids[0], account: hash('stable-ui'), plan: 'one', label: 'Gemini', time: now - (120 - i) * 60000, windows: {
         five: {used: i < 60 ? 10 + i * .15 + (i % 2 ? .4 : 0) : (i - 60) * .15 + (i % 2 ? .4 : 0), reset: i < 60 ? now - hour : now + 3 * hour}
       , week: {used: 30 + i * .2 + (i % 2 ? .4 : 0), reset: now + 4 * 86400000}

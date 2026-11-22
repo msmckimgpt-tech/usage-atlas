@@ -113,7 +113,8 @@ test('session source lookup respects provider/account/home and never persists tr
 ], async ({dir, root, file}) => {
   const index = new SessionIndex({dir: path.join(dir, 'cache')});
   try {
-    for (let i = 0; i < 4 && !index.calls.length; i++) await index.scan({codexHome: path.dirname(root), claudeDir: [], accounts: {codex: accountHash('codex')}});
+    // 스캔은 호출당 50ms 시간 예산 안에서만 일한다. 부하가 큰 환경에서는 한 번에 못 끝낼 수 있어 횟수가 아니라 제한 시간으로 기다린다.
+    for (const until = Date.now() + 10000; !index.calls.length && Date.now() < until;) await index.scan({codexHome: path.dirname(root), claudeDir: [], accounts: {codex: accountHash('codex')}});
     const call = index.calls[0]; assert.ok(call);
     const hints = await index.conversationSources(call); assert.equal(hints.length, 1); assert.equal(hints[0].path, file);
     assert.equal((await index.conversationSources({...call, account: accountHash('other')})).length, 0);

@@ -176,7 +176,7 @@ exports.run = async () => {
     await fs.writeFile(automaticPath + '.current', JSON.stringify(creditModel)); await fs.rename(automaticPath + '.current', automaticPath);
     await vscode.commands.executeCommand('usageAtlas.open');
     // 캐시 재적재는 open 뒤에 비동기로 끝난다. 부하에서는 바로 읽으면 이전 값(null)이 보이므로 제한 시간까지 기다린다.
-    for (const until = Date.now() + 20000; api.snapshot().data.codex.windows.five.at(-1).creditEstimate.nativeTotal !== 45 && Date.now() < until;) {await new Promise(resolve => setTimeout(resolve, 200)); await vscode.commands.executeCommand('usageAtlas.open');}
+    for (const until = Date.now() + 90000; api.snapshot().data.codex.windows.five.at(-1).creditEstimate.nativeTotal !== 45 && Date.now() < until;) {await new Promise(resolve => setTimeout(resolve, 200)); await vscode.commands.executeCommand('usageAtlas.open');}
     assert.equal(api.snapshot().data.codex.windows.five.at(-1).creditEstimate.nativeTotal, 45);
     assert.equal(creditModel.ratioOnlyDebitCount, 1); assert.equal(creditModel.schema, 5);
     await frame.locator('#ua-mode').selectOption('total'); await frame.locator('#ua-credit').check(); await frame.locator('#ua-credit-mode').selectOption('money');
@@ -316,6 +316,14 @@ exports.run = async () => {
     const tableText = async () => [...(await tableSvg()).matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(m => m[1]).join(' | ');
     const tableRows = async () => ((await tableSvg()).match(/<line /g) || []).length;
     const tableNames = async () => [...(await tableSvg()).matchAll(/<text x="15" y="[^"]*">([^<]*)<\/text>/g)].map(m => m[1]);
+    // 호버 이미지는 만들어진 뒤 비동기 계산이 끝나야 최신 값이 된다. 부하에서는 바로 읽으면 이전 값이 보이므로 제한 시간까지 다시 호버하며 기다린다.
+    const settled = async check => {
+      for (const until = Date.now() + 90000; !(await check()) && Date.now() < until;) {
+        await workbench.mouse.move(10, 10); await new Promise(resolve => setTimeout(resolve, 500));
+        await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible', timeout: 8000});
+      }
+    };
+    await settled(async () => /사용 가능 ≈/.test(await tableText()));
     assert.match(await tableText(), /사용 가능 ≈/); assert.equal(await tableRows(), 2, 'two model rows');
     const forecastImage = forecastHover.locator('img[alt="AI 서비스별 최근 5시간 사용률"]'); await forecastImage.evaluate(n => n.decode());
     assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360); assert.equal(await forecastImage.evaluate(n => n.naturalHeight), 176);
@@ -328,6 +336,7 @@ exports.run = async () => {
     });
     await api.refresh(); await frame.waitForFunction(() => document.querySelectorAll('[data-forecast-boundary]').length === 2);
     await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible'});
+    await settled(async () => /도달 사용량 ≈65%.*도달 사용량 ≈42.5%/.test(await tableText()));
     assert.match(await tableText(), /사용 가능 ≈/);
     assert.match(await tableText(), /도달 사용량 ≈65%.*도달 사용량 ≈42.5%/);
     assert.doesNotMatch(await tableText(), /초기화 잔여|초기화 우선|만료 우선|소진 도달/);
@@ -355,6 +364,7 @@ exports.run = async () => {
     assert.equal(api.snapshot().data.codex.forecast.five.pattern.days, 21);
     assert.ok(api.snapshot().data.codex.forecast.five.pattern.tierMatchedMs.dayType + api.snapshot().data.codex.forecast.five.pattern.tierMatchedMs.hour > 0);
     await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible'});
+    await settled(async () => /사용 가능 ≈/.test(await tableText()));
     assert.match(await tableText(), /사용 가능 ≈/);
     await forecastHover.screenshot({path: path.join(root, 'screenshots/forecast-pattern-preview-native.png')});
     await workbench.mouse.move(10, 10); await cfg.update('forecastPatternDays', 0, vscode.ConfigurationTarget.Global);
@@ -407,6 +417,7 @@ exports.run = async () => {
     assert.equal(await frame.locator('#ua-details-filters').isVisible(), false);
     await frame.locator('#ua-details-close').click();
     await workbench.mouse.move(10, 10); await workbench.locator('.statusbar-item').filter({hasText: /Usage/}).hover(); await forecastHover.waitFor({state: 'visible'});
+    await settled(async () => /AGY Gemini/.test(await tableText()) && await tableRows() === 3);
     assert.match(await tableText(), /AGY Gemini/); assert.equal(await tableRows(), 3);
     assert.deepEqual(await tableNames(), ['Codex', 'Claude Code', 'AGY Gemini']);
     await forecastImage.evaluate(n => n.decode()); assert.equal(await forecastImage.evaluate(n => n.naturalWidth), 360);

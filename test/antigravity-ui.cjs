@@ -22,6 +22,12 @@ const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>
     await stable();
     assert.equal(await page.locator('.ua-provider').count(), 5);
     assert.equal(await page.locator('[data-legend-cell="' + ids[2] + '-five"]').textContent(), '-');
+    assert.equal(await page.locator('#ua-codex .ua-quota').first().evaluate(n => n.style.getPropertyValue('--u')), '30%');
+    assert.equal(await page.locator('#ua-codex-plan').textContent(), 'fixture');
+    for (const card of await page.locator('.ua-provider').all()) {
+      const box = await card.locator('.ua-provider-head').evaluate(n => ({h: n.getBoundingClientRect().height, over: n.scrollWidth > n.clientWidth + 1}));
+      assert.ok(box.h < 24 && !box.over, 'plan stays on the model name line');
+    }
     for (const id of ids) assert.ok(await page.locator('[data-series="' + id + '-week"]').count() > 0);
     const geometry = await page.locator('#ua-chart').boundingBox();
     await page.locator('#ua-credit').check(); await page.locator('#ua-credit-mode').selectOption('estimate'); await stable();

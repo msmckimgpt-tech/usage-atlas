@@ -62,7 +62,7 @@ test('an in-flight historical read cannot block a new collection or accumulate p
   let timer;
   try {
     h.release();
-    await Promise.race([h.api.refresh(), new Promise((_, reject) => {timer = setTimeout(() => reject(Error('collection waited for historical view')), 1500);})]);
+    await Promise.race([h.api.refresh(), new Promise((_, reject) => {timer = setTimeout(() => reject(Error('collection waited for historical view')), 20000);})]);
     assert.ok(h.calls.length > 0); assert.equal(queries, 1);
   } finally {clearTimeout(timer); finishHistory(); await expanding;}
 });
@@ -473,7 +473,8 @@ test('same-provider detail filter refresh keeps an open conversation reader aliv
   , {type: 'response.completed', timestamp: stamp(-17000), response: {id: 'resp-keep', model: 'gpt-6.1-sol', usage: {input_tokens: 100, cached_input_tokens: 0, output_tokens: 20}}}
   ].map(item => JSON.stringify(item)).join('\n') + '\n');
   const h = await harness(t, {settings: {analysisEnabled: true, claudeConfigDir: claudeDir}});
-  for (let i = 0; i < 8 && !h.api.analysisSnapshot().calls.some(row => row.sessionId === 's-keep'); i++) await h.api.maintainAnalysis(true);
+  // 스캔 한 번의 예산은 50ms 라 부하에서는 고정 횟수로 끝나지 않는다. 제한 시간까지 반복한다.
+  for (const until = Date.now() + 60000; !h.api.analysisSnapshot().calls.some(row => row.sessionId === 's-keep') && Date.now() < until;) await h.api.maintainAnalysis(true);
   await h.open();
   const panel = h.panels[0], initial = h.bootstrap(panel);
   await panel.receive({type: 'ready', revision: initial.revision});

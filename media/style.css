@@ -45,13 +45,16 @@ body>#usage-atlas{box-sizing:border-box;width:100%;max-width:var(--ua-page-width
 #usage-atlas .ua-provider[data-visible=false]{background:var(--ua-bg);color:var(--ua-muted);border-style:dashed}
 #usage-atlas .ua-provider-head{display:flex;align-items:center;gap:8px;min-width:0}
 #usage-atlas .ua-provider-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#usage-atlas .ua-provider-head strong{flex:0 0 auto}
 #usage-atlas .ua-check{margin-left:auto;color:var(--c)}
 #usage-atlas .ua-provider[aria-pressed=false] .ua-check{visibility:hidden}
-#usage-atlas .ua-quota{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;font-size:12px;white-space:nowrap}
+#usage-atlas .ua-quota{--u:0%;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;font-size:12px;white-space:nowrap;padding:1px 4px;border-radius:3px;background:linear-gradient(90deg,color-mix(in srgb,var(--c) 32%,transparent) var(--u),color-mix(in srgb,var(--c) 6%,transparent) var(--u))}
+#usage-atlas .ua-plan{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:1;color:var(--ua-muted)}
+#usage-atlas .ua-plan:empty{display:none}
 #usage-atlas .ua-window{display:flex;align-items:center;gap:6px;color:var(--ua-muted)}
 #usage-atlas .ua-line{width:16px;border-top:2px solid var(--c)}
 #usage-atlas .ua-week{border-top-style:dashed}
-#usage-atlas .ua-provider-status{font-size:11px;color:var(--ua-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;height:16px}
+#usage-atlas .ua-provider-status{font-size:10px;color:var(--ua-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;height:13px;line-height:13px}
 #usage-atlas .ua-provider-credit{font-size:11px;color:var(--c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;height:16px}
 #usage-atlas .ua-provider[data-stale=true] .ua-provider-status{color:var(--ua-text);text-decoration:underline dotted}
 #usage-atlas .ua-dot{width:10px;height:10px;flex:none;background:var(--c);border:2px solid var(--c)}

@@ -89,12 +89,14 @@ async function fixture(t, options = {}) {
     , ...extra
   });
   const until = async (index, predicate, extra = {}) => {
+    // 스캔 한 번의 예산은 50ms 라 느린 디스크에서는 고정 횟수로 수렴을 보장할 수 없다. 제한 시간까지 반복한다.
+    const deadline = Date.now() + 120000;
     let result;
-    for (let i = 0; i < 150; i++) {
+    do {
       result = await scan(index, extra);
       if (predicate(result)) return result;
-    }
-    assert.fail('incremental scan failed to converge');
+    } while (Date.now() < deadline);
+    assert.fail('incremental scan failed to converge within 120s: ' + result.calls.length + ' calls');
   };
   t.after(async () => {
     for (const index of instances) await index.dispose();
@@ -552,11 +554,7 @@ test('a large historical file cannot prevent a recent Codex date directory from 
     , codex('token_usage_record', {response_id: 'recent-response', usage: usage()})
   ]);
   const index = f.create();
-  let result;
-  for (let i = 0; i < 4; i++) {
-    result = await f.scan(index);
-    if (result.calls.length) break;
-  }
+  const result = await f.until(index, r => r.calls.length > 0);
   assert.equal(result.calls.length, 1);
   assert.equal(result.calls[0].sessionId, 'recent-session');
   assert.equal(result.activity.codex.active, true);

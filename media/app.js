@@ -160,16 +160,18 @@
       const p = model.data[id], last = p?.last;
       const message = p?.status?.message || '수집 대기';
       const stale = Boolean(last && model.now - last.time > (number(model.staleAfterMs) ? model.staleAfterMs : 900000));
-      const status = `${last?.plan || '요금제 미확인'} · ${message}${stale ? ' · 기록 지연' : ''}${last ? ' · ' + new Date(last.time).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', hour12: false}) : ''}`;
-      const detail = `${status} · 최근 관측 ${last ? fmt(last.time) : '없음'}${p?.status?.next ? ' · 다음 조회 ' + fmt(p.status.next) : ''}`;
+      const plan = last?.plan || '요금제 미확인';
+      const status = `${message}${stale ? ' · 기록 지연' : ''}${last ? ' · ' + new Date(last.time).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', hour12: false}) : ''}`;
+      const detail = `${plan} · ${status} · 최근 관측 ${last ? fmt(last.time) : '없음'}${p?.status?.next ? ' · 다음 조회 ' + fmt(p.status.next) : ''}`;
       const descriptions = [];
       for (const w of ['five', 'week']) {
         const v = last?.windows[w]?.used, cell = root.querySelector(`[data-legend-cell="${id}-${w}"]`);
         cell.textContent = number(v) ? `${round(v)}% · 잔여 ${round(100 - v)}%` : '-';
+        cell.parentElement.style.setProperty('--u', (number(v) ? Math.max(0, Math.min(100, v)) : 0) + '%');
         cell.title = `${labels[w]} ${number(v) ? `사용 ${round(v)}% · 잔여 ${round(100 - v)}%` : '-'}`;
         descriptions.push(cell.title);
       }
-      el(id + '-status').textContent = status; el(id + '-status').title = detail;
+      el(id + '-plan').textContent = plan; el(id + '-plan').title = '현재 요금제 ' + plan; el(id + '-status').textContent = status; el(id + '-status').title = detail;
       el(id).title = (state.hiddenProviders.includes(id) ? names[id] + ' 그래프 표시' : names[id] + ' 그래프 숨기기') + ' · ' + detail; el(id).dataset.stale = String(stale || message !== '정상');
       el(id).setAttribute('aria-label', `${names[id]} 그래프 ${state.hiddenProviders.includes(id) ? '표시' : '숨기기'}. ${descriptions.join('. ')}. ${detail}`);
       const unit = creditUnit(id), total = creditAt(id, model.now);

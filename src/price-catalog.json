@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1
-, "version": "2026-10-22.2"
+, "version": "2026-11-25.1"
 , "verifiedAt": "2026-10-22"
 , "currency": "USD"
 , "unit": "per-million-tokens"
@@ -10,7 +10,7 @@
       "id": "openai-api"
     , "url": "https://developers.openai.com/api/docs/pricing"
     , "title": "Pricing | OpenAI API"
-    , "verifiedAt": "2026-10-22"
+    , "verifiedAt": "2026-11-25"
     , "documentVersion": null
     , "publishedAt": null
     , "lastModified": null
@@ -48,7 +48,7 @@
       "id": "openai-subscription"
     , "url": "https://learn.chatgpt.com/docs/pricing"
     , "title": "Pricing | ChatGPT Learn"
-    , "verifiedAt": "2026-10-22"
+    , "verifiedAt": "2026-11-25"
     , "documentVersion": null
     , "publishedAt": null
     , "lastModified": null
@@ -75,10 +75,49 @@
       }
     }
   , {
+      "id": "openai-gpt-6-2-astra"
+    , "url": "https://developers.openai.com/api/docs/models/gpt-6.2-astra"
+    , "title": "GPT-6.2 Astra Model | OpenAI API"
+    , "verifiedAt": "2026-11-25"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "section": "Pricing / Text tokens"
+      }
+    }
+  , {
+      "id": "openai-gpt-6-2-sol"
+    , "url": "https://developers.openai.com/api/docs/models/gpt-6.2-sol"
+    , "title": "GPT-6.2 Sol Model | OpenAI API"
+    , "verifiedAt": "2026-11-25"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "section": "Pricing / Text tokens"
+      }
+    }
+  , {
+      "id": "openai-gpt-6-1-terra"
+    , "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra"
+    , "title": "GPT-6.1 Terra Model | OpenAI API"
+    , "verifiedAt": "2026-11-25"
+    , "documentVersion": null
+    , "publishedAt": null
+    , "lastModified": null
+    , "rawMetadata": {
+        "contentType": "text/html"
+      , "section": "Pricing / Text tokens"
+      }
+    }
+  , {
       "id": "anthropic-api"
     , "url": "https://platform.claude.com/docs/en/about-claude/pricing"
     , "title": "Pricing - Claude Platform Docs"
-    , "verifiedAt": "2026-10-22"
+    , "verifiedAt": "2026-11-25"
     , "documentVersion": null
     , "publishedAt": null
     , "lastModified": null
@@ -119,7 +158,7 @@
       "id": "anthropic-models"
     , "url": "https://platform.claude.com/docs/en/models/overview"
     , "title": "Models overview - Claude Platform Docs"
-    , "verifiedAt": "2026-10-22"
+    , "verifiedAt": "2026-11-25"
     , "documentVersion": null
     , "publishedAt": null
     , "lastModified": null
@@ -185,6 +224,55 @@
       , "Ultrafast"
       ]
     }
+  , "gpt-6.2-astra": {
+      "provider": "codex"
+    , "sourceId": "openai-gpt-6-2-astra"
+    , "verifiedAt": "2026-11-25"
+    , "input": 8
+    , "cached": 0.4
+    , "output": 40
+    , "cacheWrite30m": 10
+    , "cacheWrite12h": 20
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    , "modeMultipliers": {"Standard": 1, "Fast": 2}
+    , "purchasedCreditMultipliers": {"Standard": 1, "Fast": 2}
+    , "unverifiedLongAbove": 272000
+    }
+  , "gpt-6.2-sol": {
+      "provider": "codex"
+    , "sourceId": "openai-gpt-6-2-sol"
+    , "verifiedAt": "2026-11-25"
+    , "input": 2
+    , "cached": 0.1
+    , "output": 10
+    , "cacheWrite30m": 2.5
+    , "cacheWrite12h": 5
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    , "modeMultipliers": {"Standard": 1, "Fast": 2}
+    , "purchasedCreditMultipliers": {"Standard": 1, "Fast": 2}
+    , "unverifiedLongAbove": 272000
+    }
+  , "gpt-6.1-terra": {
+      "provider": "codex"
+    , "sourceId": "openai-gpt-6-1-terra"
+    , "verifiedAt": "2026-11-25"
+    , "input": 1
+    , "cached": 0.05
+    , "output": 5
+    , "cacheWrite30m": 1.25
+    , "cacheWrite12h": 2.5
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    , "unverifiedLongAbove": 272000
+    }
   , "gpt-6.1-sol": {
       "provider": "codex"
     , "sourceId": "openai-api"
@@ -224,6 +312,21 @@
         "Standard"
       , "Fast"
       ]
+    }
+  , "claude-fable-5-2": {
+      "provider": "claude"
+    , "sourceId": "anthropic-api"
+    , "verifiedAt": "2026-11-25"
+    , "input": 8
+    , "cached": 0.2
+    , "output": 40
+    , "cacheWrite5m": 10
+    , "cacheWrite1h": 16
+    , "modes": [
+        "Standard"
+      , "Fast"
+      ]
+    , "fastMultiplier": 2
     }
   , "claude-fable-5-1": {
       "provider": "claude"
@@ -369,7 +472,22 @@
     }
   }
 , "creditModels": {
-    "gpt-6-astra": {
+    "gpt-6.2-astra": {
+      "input": 200
+    , "cached": 10
+    , "output": 1000
+    }
+  , "gpt-6.2-sol": {
+      "input": 50
+    , "cached": 2.5
+    , "output": 250
+    }
+  , "gpt-6.1-terra": {
+      "input": 25
+    , "cached": 1.25
+    , "output": 125
+    }
+  , "gpt-6-astra": {
       "input": 250
     , "cached": 25
     , "output": 1250

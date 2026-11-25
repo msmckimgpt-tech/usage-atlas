@@ -143,7 +143,7 @@ test('Claude Haiku long threshold counts all inclusive input; boundary is strict
 
 test('catalog is immutable, versioned and retains official verification metadata', () => {
   assert.ok(Object.isFrozen(catalog.models['gpt-6.1-sol']));
-  assert.match(catalog.version, /^2026-10-22\./);
+  assert.match(catalog.version, /^2026-11-25\./);
   const original = call();
   const snapshot = structuredClone(original);
   const result = priceCall(original);
@@ -151,8 +151,46 @@ test('catalog is immutable, versioned and retains official verification metadata
   assert.equal(result.pricePolicyRef, `${catalog.version}/${result.pricePolicy}`);
   for (const source of catalog.sources) {
     assert.match(source.url, /^https:\/\/(?:developers\.openai\.com|learn\.chatgpt\.com|platform\.claude\.com|code\.claude\.com)\//);
-    assert.equal(source.verifiedAt, '2026-10-22');
+    assert.match(source.verifiedAt, /^2026-(?:10-22|11-25)$/);
     assert.equal(source.documentVersion, null);
     assert.ok(source.rawMetadata.section || source.rawMetadata.sections);
+  }
+});
+
+const M = 1000000;
+const U = 60000; // codex GPT-6.x short-context limit is 272000 input tokens; keep fixtures below it
+const per = (rate, tokens = U) => rate * tokens / M;
+
+test('newly observed models are priced from official first-party rates (verified 2026-11-25)', () => {
+  const usage = {reasoning: null, input: U, cached: 0, output: U, cacheWrite30m: 0, cacheWrite12h: 0};
+  for (const [model, input, output] of [['gpt-6.2-astra', 8, 40], ['gpt-6.2-sol', 2, 10], ['gpt-6.1-terra', 1, 5]]) {
+    const result = priceCall(call({model, ...usage}));
+    near(result.costUsd, per(input) + per(output));
+    assert.ok(result.priceSource.some(url => url.includes(`/models/${model}`)), model);
+  }
+  const cache = priceCall(call({model: 'gpt-6.2-astra', reasoning: null, input: 4 * U, cached: U, output: 0, cacheWrite30m: U, cacheWrite12h: U}));
+  near(cache.costUsd, per(8) + per(0.4) + per(10) + per(20));
+  const claude = {reasoning: null, provider: 'claude', model: 'claude-fable-5-2', input: 4 * M, cached: M, cacheWrite5m: M, cacheWrite1h: M, output: M, mode: 'Standard'};
+  near(priceCall(call(claude)).costUsd, 8 + 0.2 + 10 + 16 + 40);
+  near(priceCall(call({...claude, mode: 'Fast'})).costUsd, 2 * (8 + 0.2 + 10 + 16 + 40));
+});
+
+test('GPT-6.2 Fast uses its own 2x multipliers while GPT-6.1 Terra keeps the policy 2.5x, and long context stays unpriced', () => {
+  const usage = {reasoning: null, input: U, cached: 0, output: 0, cacheWrite30m: 0, cacheWrite12h: 0, mode: 'Fast'};
+  near(priceCall(call({model: 'gpt-6.2-sol', ...usage})).costUsd, per(2) * 2);
+  near(priceCall(call({model: 'gpt-6.1-terra', ...usage})).costUsd, per(1) * 2.5);
+  assert.equal(priceCall(call({model: 'gpt-6.2-sol', ...usage, input: 272001, mode: 'Standard'})).costUsd, null);
+  assert.equal(priceCall(call({model: 'gpt-6.2-astra', ...usage, mode: 'Ultrafast'})).costUsd, null);
+  near(priceCall(call({model: 'gpt-6.2-astra', ...usage, mode: 'Standard'})).purchasedCredits, per(200));
+  const fast = priceCall(call({model: 'gpt-6.2-astra', ...usage}));
+  near(fast.purchasedCredits, per(200) * 2); near(fast.subscriptionCredits, per(200) * 2);
+  near(priceCall(call({model: 'gpt-6.1-terra', ...usage})).subscriptionCredits, per(25) * 2.5);
+  near(priceCall(call({model: 'gpt-6.1-terra', ...usage})).purchasedCredits, per(25) * 2);
+});
+
+test('model IDs still absent from the price catalog (including unconfirmed aliases) stay unpriced instead of borrowing a neighbour rate', () => {
+  for (const model of ['gpt-sol-6.2', 'gpt-6.2-terra']) {
+    assert.ok(!Object.hasOwn(catalog.models, model), model);
+    assert.equal(priceCall(call({model})).costUsd, null, model);
   }
 });

@@ -35,8 +35,9 @@ function creditCall(call = {}, {assumeMode} = {}) {
   if (!['input', 'cached', 'output'].every(key => tokens(call[key])) || call.cached > call.input) return fail('unknown-or-invalid-tokens');
   if (call.reasoning != null && (!tokens(call.reasoning) || call.reasoning > call.output)) return fail('invalid-reasoning-subset');
   const standard = ((call.input - call.cached) * rate.input + call.cached * rate.cached + call.output * rate.output) / 1000000;
-  const paid = standard * policy.purchasedCreditMultipliers[mode];
-  const included = standard * policy.modeMultipliers[mode];
+  const modelRate = catalog.models[call.model];
+  const paid = standard * (modelRate.purchasedCreditMultipliers ?? policy.purchasedCreditMultipliers)[mode];
+  const included = standard * (modelRate.modeMultipliers ?? policy.modeMultipliers)[mode];
   if (!numeric(paid) || !numeric(included)) return fail('credit-overflow');
   result.purchasedCredits = paid; result.subscriptionCredits = included;
   return result;
@@ -112,7 +113,7 @@ function priceCall(call = {}, {assumeMode} = {}) {
   if (writeTotal != null && (!tokens(writeTotal) || writeTotal !== written)) return fail('unclassified-or-conflicting-cache-write-total');
   if (call.cached + written > call.input) return fail('cache-exceeds-inclusive-input');
   if (rate.unverifiedLongAbove && call.input > rate.unverifiedLongAbove) return fail('unverified-long-context-rate');
-  let multiplier = call.provider === 'codex' ? policy.modeMultipliers[mode] : mode === 'Fast' ? rate.fastMultiplier : 1;
+  let multiplier = call.provider === 'codex' ? (rate.modeMultipliers ?? policy.modeMultipliers)[mode] : mode === 'Fast' ? rate.fastMultiplier : 1;
   const longContext = !!(rate.longThreshold && call.input > rate.longThreshold);
   if (longContext) multiplier *= rate.longMultiplier;
   if (!numeric(multiplier)) return fail('unsupported-mode-multiplier');

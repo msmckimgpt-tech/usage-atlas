@@ -75,45 +75,6 @@
       }
     }
   , {
-      "id": "openai-gpt-6-2-astra"
-    , "url": "https://developers.openai.com/api/docs/models/gpt-6.2-astra"
-    , "title": "GPT-6.2 Astra Model | OpenAI API"
-    , "verifiedAt": "2026-11-25"
-    , "documentVersion": null
-    , "publishedAt": null
-    , "lastModified": null
-    , "rawMetadata": {
-        "contentType": "text/html"
-      , "section": "Pricing / Text tokens"
-      }
-    }
-  , {
-      "id": "openai-gpt-6-2-sol"
-    , "url": "https://developers.openai.com/api/docs/models/gpt-6.2-sol"
-    , "title": "GPT-6.2 Sol Model | OpenAI API"
-    , "verifiedAt": "2026-11-25"
-    , "documentVersion": null
-    , "publishedAt": null
-    , "lastModified": null
-    , "rawMetadata": {
-        "contentType": "text/html"
-      , "section": "Pricing / Text tokens"
-      }
-    }
-  , {
-      "id": "openai-gpt-6-1-terra"
-    , "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra"
-    , "title": "GPT-6.1 Terra Model | OpenAI API"
-    , "verifiedAt": "2026-11-25"
-    , "documentVersion": null
-    , "publishedAt": null
-    , "lastModified": null
-    , "rawMetadata": {
-        "contentType": "text/html"
-      , "section": "Pricing / Text tokens"
-      }
-    }
-  , {
       "id": "anthropic-api"
     , "url": "https://platform.claude.com/docs/en/about-claude/pricing"
     , "title": "Pricing - Claude Platform Docs"
@@ -226,7 +187,7 @@
     }
   , "gpt-6.2-astra": {
       "provider": "codex"
-    , "sourceId": "openai-gpt-6-2-astra"
+    , "sourceId": "openai-api"
     , "verifiedAt": "2026-11-25"
     , "input": 8
     , "cached": 0.4
@@ -243,7 +204,7 @@
     }
   , "gpt-6.2-sol": {
       "provider": "codex"
-    , "sourceId": "openai-gpt-6-2-sol"
+    , "sourceId": "openai-api"
     , "verifiedAt": "2026-11-25"
     , "input": 2
     , "cached": 0.1
@@ -260,7 +221,7 @@
     }
   , "gpt-6.1-terra": {
       "provider": "codex"
-    , "sourceId": "openai-gpt-6-1-terra"
+    , "sourceId": "openai-api"
     , "verifiedAt": "2026-11-25"
     , "input": 1
     , "cached": 0.05

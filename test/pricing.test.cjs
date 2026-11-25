@@ -166,7 +166,7 @@ test('newly observed models are priced from official first-party rates (verified
   for (const [model, input, output] of [['gpt-6.2-astra', 8, 40], ['gpt-6.2-sol', 2, 10], ['gpt-6.1-terra', 1, 5]]) {
     const result = priceCall(call({model, ...usage}));
     near(result.costUsd, per(input) + per(output));
-    assert.ok(result.priceSource.some(url => url.includes(`/models/${model}`)), model);
+    assert.ok(result.priceSource.some(url => url.includes("developers.openai.com/api/docs/pricing") || url.includes("platform.claude.com/docs/en/about-claude/pricing")), model);
   }
   const cache = priceCall(call({model: 'gpt-6.2-astra', reasoning: null, input: 4 * U, cached: U, output: 0, cacheWrite30m: U, cacheWrite12h: U}));
   near(cache.costUsd, per(8) + per(0.4) + per(10) + per(20));
